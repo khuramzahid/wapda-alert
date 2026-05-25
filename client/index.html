@@ -46,7 +46,7 @@
     <div id="status" class="conn">Connecting...</div>
 
     <script>
-        const ESP32_IP = "ws://192.168.18.216:81";
+        const ESP32_IP = "ws://esp32-led.local:81";
 
         let ws;
 
@@ -60,7 +60,7 @@
             ws = new WebSocket(ESP32_IP);
 
             ws.onopen = () => {
-                setStatus("Connected", "conn");
+                setStatus("Connected to esp32-led.local", "conn");
             };
 
             ws.onclose = () => {
@@ -69,8 +69,6 @@
             };
 
             ws.onmessage = (event) => {
-                console.log("ESP32:", event.data);
-
                 if (event.data === "STATE:ON") {
                     setStatus("LED is ON", "on");
                 }
@@ -82,15 +80,11 @@
         }
 
         function sendOn() {
-            if (ws && ws.readyState === 1) {
-                ws.send("ON");
-            }
+            if (ws && ws.readyState === 1) ws.send("ON");
         }
 
         function sendOff() {
-            if (ws && ws.readyState === 1) {
-                ws.send("OFF");
-            }
+            if (ws && ws.readyState === 1) ws.send("OFF");
         }
 
         connect();

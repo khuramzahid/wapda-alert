@@ -1,12 +1,13 @@
 #include <WiFi.h>
 #include <WebSocketsServer.h>
+#include <ESPmDNS.h>
 
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2
 #endif
 
-const char* ssid = "HUAWEI-c43u";
-const char* password = "engineer1";
+const char* ssid = "khuram";
+const char* password = "12345678";
 
 WebSocketsServer webSocket(81);
 
@@ -39,7 +40,6 @@ void onEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
     case WStype_CONNECTED:
       Serial.println("Client connected");
 
-      // Send current state to new client
       if (ledState) webSocket.sendTXT(num, "STATE:ON");
       else webSocket.sendTXT(num, "STATE:OFF");
 
@@ -71,13 +71,23 @@ void setup() {
     Serial.print(".");
   }
 
-  Serial.println("\nConnected");
+  Serial.println("\nWiFi connected");
+  Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
+
+  // ---------------- mDNS START ----------------
+  if (!MDNS.begin("esp32-led")) {
+    Serial.println("Error starting mDNS");
+    return;
+  }
+
+  Serial.println("mDNS started: esp32-led.local");
+  // -------------------------------------------
 
   webSocket.begin();
   webSocket.onEvent(onEvent);
 
-  Serial.println("WebSocket started");
+  Serial.println("WebSocket started on port 81");
 }
 
 void loop() {
