@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>ESP32 LED Sync</title>
+    <style>
+        body {
+            font-family: Arial;
+            text-align: center;
+            margin-top: 80px;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            margin: 10px;
+        }
+
+        #status {
+            font-size: 22px;
+            margin-top: 20px;
+            font-weight: bold;
+        }
+
+        .on {
+            color: green;
+        }
+
+        .off {
+            color: red;
+        }
+
+        .conn {
+            color: blue;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>ESP32 LED Control</h1>
+
+    <button onclick="sendOn()">ON</button>
+    <button onclick="sendOff()">OFF</button>
+
+    <div id="status" class="conn">Connecting...</div>
+
+    <script>
+        const ESP32_IP = "ws://192.168.18.216:81";
+
+        let ws;
+
+        function setStatus(text, cls) {
+            const el = document.getElementById("status");
+            el.innerText = text;
+            el.className = cls;
+        }
+
+        function connect() {
+            ws = new WebSocket(ESP32_IP);
+
+            ws.onopen = () => {
+                setStatus("Connected", "conn");
+            };
+
+            ws.onclose = () => {
+                setStatus("Disconnected (reconnecting...)", "off");
+                setTimeout(connect, 2000);
+            };
+
+            ws.onmessage = (event) => {
+                console.log("ESP32:", event.data);
+
+                if (event.data === "STATE:ON") {
+                    setStatus("LED is ON", "on");
+                }
+
+                if (event.data === "STATE:OFF") {
+                    setStatus("LED is OFF", "off");
+                }
+            };
+        }
+
+        function sendOn() {
+            if (ws && ws.readyState === 1) {
+                ws.send("ON");
+            }
+        }
+
+        function sendOff() {
+            if (ws && ws.readyState === 1) {
+                ws.send("OFF");
+            }
+        }
+
+        connect();
+    </script>
+
+</body>
+
+</html>
