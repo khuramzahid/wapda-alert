@@ -2,7 +2,7 @@
 <html>
 
 <head>
-    <title>ESP32 LED Sync</title>
+    <title>WAPDA Alert — LED Control</title>
     <style>
         body {
             font-family: Arial;
@@ -38,7 +38,7 @@
 
 <body>
 
-    <h1>ESP32 LED Control</h1>
+    <h1>WAPDA Alert — LED Control</h1>
 
     <button onclick="sendOn()">ON</button>
     <button onclick="sendOff()">OFF</button>
@@ -46,7 +46,7 @@
     <div id="status" class="conn">Connecting...</div>
 
     <script>
-        const ESP32_IP = "ws://esp32-led.local:81";
+        const WS_URL = "ws://wapda-alert.local:81";
 
         let ws;
 
@@ -57,10 +57,10 @@
         }
 
         function connect() {
-            ws = new WebSocket(ESP32_IP);
+            ws = new WebSocket(WS_URL);
 
             ws.onopen = () => {
-                setStatus("Connected to esp32-led.local", "conn");
+                setStatus("Connected to wapda-alert.local", "conn");
             };
 
             ws.onclose = () => {

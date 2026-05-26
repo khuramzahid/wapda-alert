@@ -30,7 +30,7 @@
 
 // -------------------- Constants ----------------------------
 const char* AP_SSID          = "WAPDA-Alert-Setup";
-const char* MDNS_HOSTNAME    = "esp32-led";
+const char* MDNS_HOSTNAME    = "wapda-alert";
 const int   DNS_PORT         = 53;
 const int   HTTP_PORT        = 80;
 const int   WS_PORT          = 81;
@@ -46,6 +46,15 @@ WEBSERVER       httpServer(HTTP_PORT);
 WebSocketsServer webSocket(WS_PORT);
 
 bool ledState = false;
+
+// ESP-12E built-in LED (GPIO2) is active-low: LOW = ON, HIGH = OFF
+#ifdef ESP8266
+  #define LED_ON  LOW
+  #define LED_OFF HIGH
+#else
+  #define LED_ON  HIGH
+  #define LED_OFF LOW
+#endif
 
 // -------------------- Credential Storage -------------------
 #ifdef ESP32
@@ -396,13 +405,13 @@ void handleMessage(uint8_t num, String msg) {
 
   if (msg == "ON") {
     ledState = true;
-    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(LED_BUILTIN, LED_ON);
     broadcastState();
   }
 
   if (msg == "OFF") {
     ledState = false;
-    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(LED_BUILTIN, LED_OFF);
     broadcastState();
   }
 }
@@ -568,7 +577,7 @@ void setup() {
   Serial.begin(115200);
 
   pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(LED_BUILTIN, LED_OFF);
 
   pinMode(RESET_BUTTON, INPUT_PULLUP);
 
