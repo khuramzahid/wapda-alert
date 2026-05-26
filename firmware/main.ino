@@ -29,7 +29,8 @@
 #define RESET_BUTTON 0  // GPIO0 — BOOT button on most dev boards
 
 // -------------------- Constants ----------------------------
-const char* AP_SSID          = "WAPDA-Alert-Setup";
+const char* AP_PREFIX        = "WAPDA-Alert";
+char AP_SSID[24];  // Built dynamically: "WAPDA-Alert-XXXX" (MAC suffix)
 const char* MDNS_HOSTNAME    = "wapda-alert";
 const int   DNS_PORT         = 53;
 const int   HTTP_PORT        = 80;
@@ -455,6 +456,20 @@ void handleScan() {
   httpServer.send(200, "application/json", json);
 }
 
+// Device info endpoint (available in setup mode for app provisioning)
+void handleInfo() {
+  String json = "{\"mac\":\"" + WiFi.macAddress() + "\",\"ssid\":\"" + String(AP_SSID) + "\"}";
+  httpServer.send(200, "application/json", json);
+}
+
+// LED status endpoint (available in normal mode for app state polling)
+void handleStatus() {
+  String json = "{\"led\":";
+  json += ledState ? "true" : "false";
+  json += ",\"ip\":\"" + WiFi.localIP().toString() + "\"}";
+  httpServer.send(200, "application/json", json);
+}
+
 void handleSave() {
   String ssid = httpServer.arg("ssid");
   String pass = httpServer.arg("pass");
@@ -499,6 +514,7 @@ void startSetupMode() {
   httpServer.on("/",     HTTP_GET,  handleRoot);
   httpServer.on("/scan", HTTP_GET,  handleScan);
   httpServer.on("/save", HTTP_POST, handleSave);
+  httpServer.on("/info", HTTP_GET,  handleInfo);
   httpServer.onNotFound(handleNotFound);
   httpServer.begin();
 
@@ -540,6 +556,11 @@ void startNormalMode() {
     Serial.println("mDNS started: " + String(MDNS_HOSTNAME) + ".local");
   }
 
+  // HTTP server (for /status endpoint in normal mode)
+  httpServer.on("/status", HTTP_GET, handleStatus);
+  httpServer.begin();
+  Serial.println("HTTP status endpoint active on port " + String(HTTP_PORT));
+
   // WebSocket server
   webSocket.begin();
   webSocket.onEvent(onEvent);
@@ -576,6 +597,12 @@ void checkFactoryReset() {
 void setup() {
   Serial.begin(115200);
 
+  // Build unique AP SSID from MAC address
+  String mac = WiFi.macAddress();
+  String suffix = mac.substring(12, 14) + mac.substring(15, 17); // last 4 hex chars
+  snprintf(AP_SSID, sizeof(AP_SSID), "%s-%s", AP_PREFIX, suffix.c_str());
+  Serial.println("Device AP SSID: " + String(AP_SSID));
+
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LED_OFF);
 
@@ -609,6 +636,7 @@ void loop() {
     httpServer.handleClient();
   } else {
     webSocket.loop();
+    httpServer.handleClient();  // Handle /status requests in normal mode
 
     #ifdef ESP8266
       MDNS.update();
