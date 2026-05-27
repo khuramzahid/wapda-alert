@@ -415,6 +415,14 @@ void handleMessage(uint8_t num, String msg) {
     digitalWrite(LED_BUILTIN, LED_OFF);
     broadcastState();
   }
+
+  if (msg == "RESET") {
+    Serial.println("Factory reset requested remotely.");
+    webSocket.broadcastTXT("RESETTING");
+    clearCredentials();
+    delay(1000);
+    ESP.restart();
+  }
 }
 
 void onEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {

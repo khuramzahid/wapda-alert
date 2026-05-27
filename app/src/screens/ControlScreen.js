@@ -162,6 +162,31 @@ export default function ControlScreen({ navigation }) {
     [deviceIP]
   );
 
+  // ── Restart device ──
+  const handleRestart = useCallback(() => {
+    if (!connected) return;
+
+    Alert.alert(
+      'Factory Reset',
+      'This will erase saved WiFi credentials and restart the ESP8266 into setup mode. You will need to reconfigure it.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            Vibration.vibrate(50);
+            WebSocketService.send('RESET');
+            await stopBackgroundMonitoring();
+            WebSocketService.disconnect();
+            await clearDevice();
+            navigation.replace('Setup');
+          },
+        },
+      ]
+    );
+  }, [connected]);
+
   // ── Forget device ──
   const handleForget = useCallback(() => {
     Alert.alert(
@@ -343,6 +368,30 @@ export default function ControlScreen({ navigation }) {
             </View>
           </View>
         </View>
+
+        {/* Restart Device Card */}
+        <View style={styles.infoCard}>
+          <View style={styles.infoCardLeft}>
+            <Text style={styles.infoCardIcon}>🔄</Text>
+            <View>
+              <Text style={styles.infoCardTitle}>Factory Reset</Text>
+              <Text style={styles.infoCardSubtitle}>
+                Erase credentials & enter setup mode
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.restartBtn,
+              !connected && styles.restartBtnDisabled,
+            ]}
+            onPress={handleRestart}
+            disabled={!connected}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.restartBtnText}>Reset</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </Animated.View>
   );
@@ -508,5 +557,20 @@ const styles = StyleSheet.create({
   infoCardSubtitle: {
     fontSize: fonts.sizes.xs,
     color: colors.textMuted,
+  },
+  restartBtn: {
+    backgroundColor: colors.danger,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.sm,
+  },
+  restartBtnDisabled: {
+    backgroundColor: colors.borderLight,
+    opacity: 0.5,
+  },
+  restartBtnText: {
+    fontSize: fonts.sizes.sm,
+    fontWeight: fonts.weights.bold,
+    color: colors.textInverse,
   },
 });
