@@ -6,10 +6,6 @@ node_modules/
 dist/
 web-build/
 
-# Native builds
-android/
-ios/
-
 # Environment
 .env
 .env.local
