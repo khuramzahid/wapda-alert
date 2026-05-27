@@ -562,6 +562,9 @@ void startNormalMode() {
     Serial.println("Error starting mDNS");
   } else {
     Serial.println("mDNS started: " + String(MDNS_HOSTNAME) + ".local");
+    // Advertise HTTP service so Android NSD can discover us instantly
+    MDNS.addService("http", "tcp", HTTP_PORT);
+    Serial.println("mDNS service advertised: _http._tcp on port " + String(HTTP_PORT));
   }
 
   // HTTP server (for /status endpoint in normal mode)

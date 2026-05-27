@@ -25,18 +25,32 @@ class WebSocketService {
    * @param {number} [port=81] - WebSocket port
    */
   connect(ip, port = 81) {
-    this.url = `ws://${ip}:${port}`;
+    const newUrl = `ws://${ip}:${port}`;
+
+    // Skip if already connected to the same device
+    if (this.url === newUrl && this.isConnected()) {
+      console.log('[WS] Already connected to', newUrl);
+      return;
+    }
+
+    this.url = newUrl;
     this.intentionalClose = false;
     this._doConnect();
   }
 
   _doConnect() {
+    // Clean up old socket without triggering reconnect
     if (this.ws) {
       try {
+        this.ws.onopen = null;
+        this.ws.onmessage = null;
+        this.ws.onclose = null;
+        this.ws.onerror = null;
         this.ws.close();
       } catch (e) {
         // ignore
       }
+      this.ws = null;
     }
 
     console.log(`[WS] Connecting to ${this.url}`);

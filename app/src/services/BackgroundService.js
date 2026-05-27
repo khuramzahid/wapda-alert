@@ -63,6 +63,8 @@ const bgOptions = {
   },
   color: '#3b82f6',
   linkingURI: 'wapdaalert://',
+  // Required for Android 14+ (SDK 34): must match AndroidManifest.xml
+  foregroundServiceType: ['dataSync'],
   progressBar: {
     max: 100,
     value: 0,

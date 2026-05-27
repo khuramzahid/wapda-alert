@@ -258,7 +258,23 @@ export default function ControlScreen({ navigation }) {
             </Text>
           </View>
         </View>
-        <TouchableOpacity onPress={handleForget} style={styles.settingsBtn}>
+        <TouchableOpacity
+          onPress={() => {
+            Alert.alert('Settings', '', [
+              {
+                text: 'Add New Device',
+                onPress: () => navigation.navigate('Setup'),
+              },
+              {
+                text: 'Forget Device',
+                style: 'destructive',
+                onPress: handleForget,
+              },
+              { text: 'Cancel', style: 'cancel' },
+            ]);
+          }}
+          style={styles.settingsBtn}
+        >
           <Text style={styles.settingsIcon}>⚙️</Text>
         </TouchableOpacity>
       </View>

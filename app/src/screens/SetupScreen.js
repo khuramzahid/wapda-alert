@@ -22,6 +22,11 @@ import {
   requestLocationPermission,
 } from '../services/WifiService';
 import { saveDevice } from '../services/DeviceStorage';
+import {
+  requestNotificationPermission,
+  startBackgroundMonitoring,
+} from '../services/BackgroundService';
+import { findDevice } from '../services/DiscoveryService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -147,6 +152,7 @@ export default function SetupScreen({ navigation }) {
     })();
   `;
 
+
   const handleWebViewMessage = useCallback(
     async (event) => {
       if (event.nativeEvent.data === 'CONFIG_DONE') {
@@ -157,33 +163,15 @@ export default function SetupScreen({ navigation }) {
         await disconnectFromAP();
 
         setWaitMessage('Reconnecting to your home WiFi...');
-        await new Promise((r) => setTimeout(r, 3000));
+        await new Promise((r) => setTimeout(r, 5000));
 
         setWaitMessage('Waiting for device to join the network...');
 
-        // Poll the device's /status endpoint on the home network
-        // The device takes ~5–10 seconds to restart and connect
-        let deviceIP = null;
-        for (let attempt = 0; attempt < 20; attempt++) {
-          await new Promise((r) => setTimeout(r, 3000));
-          setWaitMessage(
-            `Searching for device on home network... (${attempt + 1}/20)`
-          );
+        // Give the ESP8266 time to restart and connect (~8-12 seconds)
+        await new Promise((r) => setTimeout(r, 5000));
 
-          try {
-            // Try mDNS first
-            const resp = await fetch('http://wapda-alert.local/status', {
-              signal: AbortSignal.timeout(3000),
-            });
-            if (resp.ok) {
-              const data = await resp.json();
-              deviceIP = data.ip;
-              break;
-            }
-          } catch (e) {
-            // mDNS may not work on Android, keep trying
-          }
-        }
+        // Discover the device on the home network
+        const deviceIP = await findDevice(setWaitMessage);
 
         if (deviceIP) {
           // Save the device info
@@ -193,7 +181,18 @@ export default function SetupScreen({ navigation }) {
             apSSID: selectedAP,
           });
 
-          setWaitMessage('Device found! Connecting...');
+          // Request notification permission & auto-start background monitoring
+          setWaitMessage('Device found! Setting up notifications...');
+          const hasPermission = await requestNotificationPermission();
+          if (hasPermission) {
+            try {
+              await startBackgroundMonitoring(deviceIP);
+            } catch (e) {
+              console.log('Background monitoring setup deferred:', e.message);
+            }
+          }
+
+          setWaitMessage('All set! Opening controls...');
           await new Promise((r) => setTimeout(r, 1000));
 
           // Navigate to Control screen
@@ -201,7 +200,7 @@ export default function SetupScreen({ navigation }) {
         } else {
           setError(
             'Could not find the device on your home network. ' +
-            'Please make sure the device and phone are on the same WiFi network.'
+            'Please make sure the device and phone are on the same WiFi network, then try again.'
           );
           setStage(STAGE.SCANNING);
         }
