@@ -24,7 +24,6 @@ Since this uses native modules (WiFi, background service), you need a dev build.
 **Option A — Local build** (requires Android SDK):
 
 ```bash
-npx expo prebuild --platform android
 npx expo run:android
 ```
 
@@ -43,3 +42,22 @@ npx expo start --dev-client
 ```
 
 Scan the QR code from the dev build app on your phone.
+
+---
+
+## Building a Release APK
+
+To build a standalone APK for your phone:
+
+```bash
+npm run build:apk
+```
+
+> ⚠️ **IMPORTANT: Do NOT use `expo prebuild --clean`**
+>
+> The `android/` directory contains manual native configurations that are required for this app to function, including:
+> - `android:usesCleartextTraffic="true"` (Allows HTTP traffic to the ESP8266)
+> - `CHANGE_WIFI_MULTICAST_STATE` permission (Required for mDNS discovery)
+> - `dataSync` foreground service type (Fixes Android 14+ crashes)
+>
+> Running `expo prebuild --clean` will delete the `android/` directory and regenerate it from scratch, which will erase these necessary manual changes and break the app. Always use `npx expo run:android` or the `build:apk` script instead.

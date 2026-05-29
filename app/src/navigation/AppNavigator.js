@@ -13,7 +13,7 @@ const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
   const [initialRoute, setInitialRoute] = useState(null);
-  const [statusMsg, setStatusMsg] = useState('Checking saved device...');
+  const [statusMsg, setStatusMsg] = useState('Loading...');
   const pulseAnim = React.useRef(new Animated.Value(0.6)).current;
 
   // Pulse animation for the loading icon
@@ -38,52 +38,26 @@ export default function AppNavigator() {
 
   useEffect(() => {
     const checkDevice = async () => {
-      // 1. Check if we already have a saved device
+      setStatusMsg('Checking saved device...');
       const device = await loadDevice();
-      if (device) {
-        // Verify the saved device is still reachable
-        setStatusMsg('Checking saved device...');
-        try {
-          const resp = await fetch(`http://${device.ip}/status`, {
-            signal: AbortSignal.timeout(3000),
-          });
-          if (resp.ok) {
-            setInitialRoute('Control');
-            return;
-          }
-        } catch (e) {
-          // Saved device unreachable — try rediscovery
-          setStatusMsg('Saved device unreachable. Scanning network...');
-        }
-
-        // Try to rediscover (device IP may have changed via DHCP)
-        const newIP = await findDevice(setStatusMsg);
-        if (newIP) {
-          await saveDevice({ ...device, ip: newIP });
-          setInitialRoute('Control');
-          return;
-        }
-
-        // Device not found — still go to Control (it will handle reconnection)
-        setInitialRoute('Control');
-        return;
-      }
-
-      // 2. No saved device — try auto-discovery on the local network
-      setStatusMsg('Looking for devices on your network...');
-      const discoveredIP = await findDevice(setStatusMsg);
-
-      if (discoveredIP) {
-        // Found a device! Save it and go to Control
-        await saveDevice({
-          ip: discoveredIP,
-          mac: 'auto-discovered',
-          apSSID: 'unknown',
-        });
+      
+      if (device && device.ip) {
+        // Everyday Use: We have a saved device, go straight to control (Instant)
         setInitialRoute('Control');
       } else {
-        // No device found — show Setup screen
-        setInitialRoute('Setup');
+        // Smart First-Launch Discovery:
+        // No saved device. Scan the home network to see if it's already configured.
+        setStatusMsg('Scanning network for WAPDA Alert devices...');
+        const discoveredIP = await findDevice(setStatusMsg);
+
+        if (discoveredIP) {
+          // Found an already-configured device on the network! Save it.
+          await saveDevice({ ip: discoveredIP, mac: 'unknown', apSSID: 'unknown' });
+          setInitialRoute('Control');
+        } else {
+          // Not found on network. Assume it's brand new and needs hardware setup.
+          setInitialRoute('Setup');
+        }
       }
     };
 

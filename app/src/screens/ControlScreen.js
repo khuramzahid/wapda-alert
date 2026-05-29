@@ -25,7 +25,6 @@ export default function ControlScreen({ navigation }) {
   const [ledOn, setLedOn] = useState(false);
   const [connected, setConnected] = useState(false);
   const [deviceIP, setDeviceIP] = useState('');
-  const [bgMonitoring, setBgMonitoring] = useState(false);
   const [connecting, setConnecting] = useState(true);
 
   // Animated values
@@ -89,7 +88,6 @@ export default function ControlScreen({ navigation }) {
       }
 
       setDeviceIP(device.ip);
-      setBgMonitoring(isBackgroundMonitoringActive());
 
       // Register listeners
       unsubState = WebSocketService.onStateChange((on, changed) => {
@@ -101,8 +99,14 @@ export default function ControlScreen({ navigation }) {
         setConnecting(false);
       });
 
-      // Connect WebSocket
-      WebSocketService.connect(device.ip);
+      // Automatically start background monitoring (which handles WebSocket connection)
+      const hasPermission = await requestNotificationPermission();
+      if (hasPermission) {
+        await startBackgroundMonitoring(device.ip);
+      } else {
+        // Fallback to regular foreground connection if permission denied
+        WebSocketService.connect(device.ip);
+      }
     };
 
     init();
@@ -110,10 +114,7 @@ export default function ControlScreen({ navigation }) {
     return () => {
       if (unsubState) unsubState();
       if (unsubConn) unsubConn();
-      // Don't disconnect if background monitoring is active
-      if (!isBackgroundMonitoringActive()) {
-        WebSocketService.disconnect();
-      }
+      // We no longer disconnect on unmount, background service keeps it alive!
     };
   }, [navigation]);
 
@@ -140,27 +141,6 @@ export default function ControlScreen({ navigation }) {
     WebSocketService.send(ledOn ? 'OFF' : 'ON');
   }, [connected, ledOn]);
 
-  // ── Toggle background monitoring ──
-  const handleBgToggle = useCallback(
-    async (value) => {
-      if (value) {
-        const permission = await requestNotificationPermission();
-        if (!permission) {
-          Alert.alert(
-            'Permission Required',
-            'Notification permission is needed for power alerts.'
-          );
-          return;
-        }
-        await startBackgroundMonitoring(deviceIP);
-        setBgMonitoring(true);
-      } else {
-        await stopBackgroundMonitoring();
-        setBgMonitoring(false);
-      }
-    },
-    [deviceIP]
-  );
 
   // ── Restart device ──
   const handleRestart = useCallback(() => {
@@ -336,27 +316,6 @@ export default function ControlScreen({ navigation }) {
 
       {/* ── Info Cards ── */}
       <View style={styles.infoSection}>
-        {/* Background Monitoring Card */}
-        <View style={styles.infoCard}>
-          <View style={styles.infoCardLeft}>
-            <Text style={styles.infoCardIcon}>🔔</Text>
-            <View>
-              <Text style={styles.infoCardTitle}>Background Monitoring</Text>
-              <Text style={styles.infoCardSubtitle}>
-                Get notified on power changes
-              </Text>
-            </View>
-          </View>
-          <Switch
-            value={bgMonitoring}
-            onValueChange={handleBgToggle}
-            trackColor={{
-              false: colors.borderLight,
-              true: colors.primary + '60',
-            }}
-            thumbColor={bgMonitoring ? colors.primary : colors.textMuted}
-          />
-        </View>
 
         {/* Device Info Card */}
         <View style={styles.infoCard}>

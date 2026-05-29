@@ -56,8 +56,17 @@ class WebSocketService {
     console.log(`[WS] Connecting to ${this.url}`);
     this.ws = new WebSocket(this.url);
 
+    // Timeout to prevent hanging in "Connecting..." indefinitely
+    const connTimeout = setTimeout(() => {
+      if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+        console.log('[WS] Connection timeout');
+        try { this.ws.close(); } catch (e) {}
+      }
+    }, 5000);
+
     this.ws.onopen = () => {
       console.log('[WS] Connected');
+      clearTimeout(connTimeout);
       this.connected = true;
       this.reconnectDelay = 2000; // Reset backoff
       this._notifyConnectionListeners(true);

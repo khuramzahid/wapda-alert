@@ -162,16 +162,22 @@ export default function SetupScreen({ navigation }) {
         // Disconnect from the ESP8266 AP
         await disconnectFromAP();
 
-        setWaitMessage('Reconnecting to your home WiFi...');
-        await new Promise((r) => setTimeout(r, 5000));
+        // Wait for phone to rejoin home WiFi (~2s) AND for the ESP8266 to
+        // restart + connect to home WiFi + get a DHCP IP (~10-15s).
+        setWaitMessage('Waiting for device to join your network...');
+        await new Promise((r) => setTimeout(r, 18000));
 
-        setWaitMessage('Waiting for device to join the network...');
-
-        // Give the ESP8266 time to restart and connect (~8-12 seconds)
-        await new Promise((r) => setTimeout(r, 5000));
-
-        // Discover the device on the home network
-        const deviceIP = await findDevice(setWaitMessage);
+        // With the 15s wait, Android's mDNS stack has time to stabilize on the new network.
+        // We use findDevice which tries NSD (mDNS) first, then falls back to subnet scan.
+        let deviceIP = null;
+        for (let attempt = 1; attempt <= 3 && !deviceIP; attempt++) {
+          setWaitMessage(`Searching for device via mDNS... (attempt ${attempt}/3)`);
+          deviceIP = await findDevice(setWaitMessage);
+          if (!deviceIP && attempt < 3) {
+            setWaitMessage('Device not found yet, retrying...');
+            await new Promise((r) => setTimeout(r, 2000));
+          }
+        }
 
         if (deviceIP) {
           // Save the device info

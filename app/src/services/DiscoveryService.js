@@ -75,6 +75,7 @@ export function discoverDeviceViaNSD(onProgress, timeoutMs = 6000) {
 
 /**
  * Scan the local /24 subnet for an ESP8266 running WAPDA Alert firmware.
+ * Fires all 254 requests in parallel — first success wins immediately.
  *
  * @param {(msg: string) => void} [onProgress] - Optional progress callback
  * @returns {Promise<string|null>} - Device IP if found, null otherwise
@@ -92,48 +93,38 @@ export async function discoverDeviceOnNetwork(onProgress) {
 
   if (!phoneIP) return null;
 
-  // Derive subnet prefix (e.g. "192.168.1." from "192.168.1.105")
   const parts = phoneIP.split('.');
   if (parts.length !== 4) return null;
   const subnet = parts.slice(0, 3).join('.') + '.';
 
-  log(`Scanning subnet ${subnet}0/24...`);
+  log(`Scanning ${subnet}0/24...`);
 
-  // Scan in batches to avoid overwhelming the network
-  const BATCH_SIZE = 30;
-  const TIMEOUT_MS = 2000;
+  // Fire all 254 requests simultaneously — first valid response wins
+  return new Promise((resolve) => {
+    let found = false;
+    let pending = 254;
 
-  for (let start = 1; start <= 254; start += BATCH_SIZE) {
-    const end = Math.min(start + BATCH_SIZE - 1, 254);
-    log(`Scanning ${subnet}${start} – ${subnet}${end}...`);
-
-    const batch = [];
-    for (let i = start; i <= end; i++) {
+    for (let i = 1; i <= 254; i++) {
       const ip = subnet + i;
-      batch.push(
-        fetch(`http://${ip}/status`, {
-          signal: AbortSignal.timeout(TIMEOUT_MS),
+      fetch(`http://${ip}/status`, { signal: AbortSignal.timeout(1500) })
+        .then((resp) => (resp.ok ? resp.json() : null))
+        .then((data) => {
+          if (!found && data && typeof data.led === 'boolean') {
+            found = true;
+            log(`Found device at ${ip}`);
+            resolve(data.ip || ip);
+          }
         })
-          .then(async (resp) => {
-            if (resp.ok) {
-              const data = await resp.json();
-              // Verify it's our device (has led field in response)
-              if (data && typeof data.led === 'boolean') {
-                return data.ip || ip;
-              }
-            }
-            return null;
-          })
-          .catch(() => null)
-      );
+        .catch(() => {})
+        .finally(() => {
+          pending--;
+          if (pending === 0 && !found) {
+            log('No device found on subnet.');
+            resolve(null);
+          }
+        });
     }
-
-    const results = await Promise.all(batch);
-    const found = results.find((ip) => ip !== null);
-    if (found) return found;
-  }
-
-  return null;
+  });
 }
 
 // ── Main entry point ────────────────────────────────────────────────

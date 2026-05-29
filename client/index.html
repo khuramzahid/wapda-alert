@@ -42,6 +42,8 @@
 
     <button onclick="sendOn()">ON</button>
     <button onclick="sendOff()">OFF</button>
+    <br><br>
+    <button onclick="sendReset()" style="background-color: #ff4444; color: white; border: none; border-radius: 5px;">RESET DEVICE (FACTORY)</button>
 
     <div id="status" class="conn">Connecting...</div>
 
@@ -85,6 +87,12 @@
 
         function sendOff() {
             if (ws && ws.readyState === 1) ws.send("OFF");
+        }
+
+        function sendReset() {
+            if (confirm("Are you sure you want to factory reset the ESP8266? You will need to reconfigure its WiFi via the mobile app.")) {
+                if (ws && ws.readyState === 1) ws.send("RESET");
+            }
         }
 
         connect();

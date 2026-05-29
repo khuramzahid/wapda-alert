@@ -6,6 +6,7 @@
     "start": "expo start --dev-client",
     "android": "expo run:android",
     "prebuild": "expo prebuild",
+    "build:apk": "cd android && ./gradlew assembleRelease",
     "ios": "expo run:ios"
   },
   "dependencies": {
