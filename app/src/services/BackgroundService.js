@@ -83,9 +83,19 @@ const backgroundTask = async (taskData) => {
   const { delay } = taskData;
 
   // Register state change listener for notifications
-  const unsubscribe = WebSocketService.onStateChange((ledOn, changed) => {
+  const unsubState = WebSocketService.onStateChange((ledOn, changed) => {
     if (changed) {
       sendPowerNotification(ledOn);
+    }
+  });
+
+  // Register connection listener to detect power loss
+  const unsubConn = WebSocketService.onConnectionChange((isConnected) => {
+    if (!isConnected) {
+      // Device disconnected (power likely went out and device died)
+      sendPowerNotification(false);
+    } else {
+      // Reconnected, power is back. The onStateChange will fire shortly to confirm LED state.
     }
   });
 
@@ -94,7 +104,8 @@ const backgroundTask = async (taskData) => {
     const checkInterval = setInterval(async () => {
       if (!BackgroundService.isRunning()) {
         clearInterval(checkInterval);
-        unsubscribe();
+        unsubState();
+        unsubConn();
         resolve();
       }
     }, delay);

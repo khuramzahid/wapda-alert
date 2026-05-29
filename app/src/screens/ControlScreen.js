@@ -89,6 +89,13 @@ export default function ControlScreen({ navigation }) {
 
       setDeviceIP(device.ip);
 
+      // Sync initial state if already connected via background service
+      if (WebSocketService.isConnected()) {
+        setConnected(true);
+        setConnecting(false);
+        setLedOn(WebSocketService.getLastState() || false);
+      }
+
       // Register listeners
       unsubState = WebSocketService.onStateChange((on, changed) => {
         setLedOn(on);
@@ -138,8 +145,23 @@ export default function ControlScreen({ navigation }) {
       }),
     ]).start();
 
-    WebSocketService.send(ledOn ? 'OFF' : 'ON');
-  }, [connected, ledOn]);
+    const expectedState = !ledOn;
+    WebSocketService.send(expectedState ? 'ON' : 'OFF');
+
+    // Auto-remove device if no update is received within 5 seconds
+    setTimeout(async () => {
+      if (WebSocketService.getLastState() !== expectedState) {
+        Alert.alert(
+          'Device Unreachable',
+          'No response received from the device. Removing device to allow network re-scan.'
+        );
+        await stopBackgroundMonitoring();
+        WebSocketService.disconnect();
+        await clearDevice();
+        navigation.replace('Setup');
+      }
+    }, 5000);
+  }, [connected, ledOn, navigation]);
 
 
   // ── Restart device ──
