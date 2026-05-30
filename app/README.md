@@ -70,13 +70,13 @@ The following security vulnerabilities have been identified. Items marked ✅ ar
 ### Firmware / Hardware Security
 1. ✅ **WPA2 Setup WiFi Network:** The setup AP (`WAPDA-Alert-XXXX`) is now protected with WPA2 password `wapda1234`. The app auto-fills this password — users are never prompted.
 2. ✅ **Authenticated WebSocket Access:** The WebSocket server and `/status` endpoint now require token-based authentication. Clients must send `AUTH:<shared_secret>` after connecting. Unauthenticated clients are disconnected.
-3. ✅ **Encrypted WebSocket Traffic (WSS):** Firmware rewritten for ESP32-only with TLS. Communication uses `wss://` with a self-signed RSA-2048 certificate embedded in the firmware.
-4. **Plaintext Credential Storage:** The ESP32 stores home WiFi passwords in NVS (Non-Volatile Storage) in plain text. **Mitigation options:**
-   - **Best:** Enable ESP-IDF NVS Encryption (`CONFIG_SECURE_FLASH_ENC_ENABLED`). Requires building with ESP-IDF instead of Arduino IDE. The NVS partition is automatically encrypted at rest using a hardware key.
-   - **Lightweight:** XOR-encrypt the password with the device's MAC address before storing via `Preferences`. This makes casual NVS dumps useless without the specific device's MAC address.
+3. ❌ **Encrypted WebSocket Traffic (WSS):** *Attempted but reverted.* The `arduinoWebSockets` library does not support `wss://` for servers. Furthermore, React Native strictly rejects self-signed certificates for local WebSockets. We must rely on `ws://` secured by the Token-Based Authentication implemented in Issue 2.
+4. **Plaintext Credential Storage:** The device stores home WiFi passwords in flash memory (EEPROM/NVS) in plain text. **Mitigation options:**
+   - **Best (ESP32 only):** Enable ESP-IDF NVS Encryption (`CONFIG_SECURE_FLASH_ENC_ENABLED`). Requires building with ESP-IDF instead of Arduino IDE. The NVS partition is automatically encrypted at rest using a hardware key.
+   - **Lightweight (ESP8266/ESP32):** XOR-encrypt the password with the device's MAC address before storing. This makes casual memory dumps useless without the specific device's MAC address.
 
 ### React Native App Security
-1. ✅ **Cleartext Traffic Restricted:** Replaced blanket `usesCleartextTraffic="true"` with a Network Security Config (`res/xml/network_security_config.xml`) that allows cleartext HTTP only to `192.168.4.1` (the ESP32 captive portal). All other traffic enforces HTTPS/TLS.
+1. ❌ **Cleartext Traffic Restricted:** *Attempted but reverted.* Android's Network Security Config does not support allowing IP ranges (like `192.168.*.*`). Because we must use `ws://` (cleartext) to communicate with the ESP32 dynamically on the local network, `cleartextTrafficPermitted` must remain `true`.
 2. **NPM Dependency Vulnerabilities:** Run the following to resolve known CVEs in the build chain:
    ```bash
    cd app

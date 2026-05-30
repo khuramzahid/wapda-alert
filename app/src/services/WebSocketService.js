@@ -28,7 +28,7 @@ class WebSocketService {
    * @param {number} [port=81] - WebSocket port
    */
   connect(ip, port = 81) {
-    const newUrl = `wss://${ip}:${port}`;
+    const newUrl = `ws://${ip}:${port}`;
 
     // Skip if already connected to the same device
     if (this.url === newUrl && this.isConnected()) {

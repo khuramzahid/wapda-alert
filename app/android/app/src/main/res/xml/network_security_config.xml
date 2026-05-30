@@ -7,15 +7,12 @@
   All other traffic (including wss:// WebSocket) uses TLS.
 -->
 <network-security-config>
-  <!-- Default: block cleartext everywhere -->
-  <base-config cleartextTrafficPermitted="false">
+  <!-- Since local WSS is not viable, we must allow cleartext (ws:// and http://) 
+       so the app can talk to the ESP32 dynamically on the local home network. 
+       Android does not support allowing IP ranges (like 192.168.*.*). -->
+  <base-config cleartextTrafficPermitted="true">
     <trust-anchors>
       <certificates src="system" />
     </trust-anchors>
   </base-config>
-
-  <!-- Exception: allow cleartext only to the ESP32 captive portal IP -->
-  <domain-config cleartextTrafficPermitted="true">
-    <domain includeSubdomains="false">192.168.4.1</domain>
-  </domain-config>
 </network-security-config>
