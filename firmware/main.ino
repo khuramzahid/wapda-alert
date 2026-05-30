@@ -1,23 +1,15 @@
 // ============================================================
-//  WAPDA Alert — ESP32 / ESP8266 Firmware
+//  WAPDA Alert — ESP32 Firmware (TLS-enabled)
 //  WiFi provisioning via SoftAP + Captive Portal
+//  Secure WebSockets (wss://) with token authentication
 // ============================================================
 
 // -------------------- Platform Includes --------------------
-#ifdef ESP32
-  #include <WiFi.h>
-  #include <WebServer.h>
-  #include <ESPmDNS.h>
-  #include <Preferences.h>
-  #define WEBSERVER WebServer
-#elif defined(ESP8266)
-  #include <ESP8266WiFi.h>
-  #include <ESP8266WebServer.h>
-  #include <ESP8266mDNS.h>
-  #include <EEPROM.h>
-  #define WEBSERVER ESP8266WebServer
-#endif
-
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
+#include <Preferences.h>
 #include <DNSServer.h>
 #include <WebSocketsServer.h>
 
@@ -31,6 +23,7 @@
 // -------------------- Constants ----------------------------
 const char* AP_PREFIX        = "WAPDA-Alert";
 char AP_SSID[24];  // Built dynamically: "WAPDA-Alert-XXXX" (MAC suffix)
+const char* AP_PASSWORD      = "wapda1234";  // WPA2 password for setup AP
 const char* MDNS_HOSTNAME    = "wapda-alert";
 const int   DNS_PORT         = 53;
 const int   HTTP_PORT        = 80;
@@ -38,114 +31,112 @@ const int   WS_PORT          = 81;
 const unsigned long RESET_HOLD_MS   = 5000;  // 5-second hold to factory reset
 const unsigned long WIFI_TIMEOUT_MS = 15000; // 15 seconds to connect before falling back to AP
 
+// -------------------- Authentication -----------------------
+const char* WS_AUTH_KEY = "wapda-secret-2026";  // Shared secret for WebSocket auth
+#define MAX_WS_CLIENTS 5
+bool clientAuthenticated[MAX_WS_CLIENTS] = { false };
+
+// -------------------- TLS Certificate ----------------------
+// Self-signed RSA-2048 certificate for wss:// (valid 10 years)
+// Regenerate with: openssl req -x509 -nodes -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -subj "/CN=wapda-alert.local"
+const char SSL_CERT[] PROGMEM = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIIDGTCCAgGgAwIBAgIUUBqJfFbQcvpEz+ZmrEOK/jyLukYwDQYJKoZIhvcNAQEL
+BQAwHDEaMBgGA1UEAwwRd2FwZGEtYWxlcnQubG9jYWwwHhcNMjYwNTMwMTYzMTE3
+WhcNMzYwNTI3MTYzMTE3WjAcMRowGAYDVQQDDBF3YXBkYS1hbGVydC5sb2NhbDCC
+ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKv+uN1dY5XkKahiwZ+S2aWR
+pC9yCKbGw8yfyqQQ/F1mtOQ8WyGeVsagmIACJCFxsE3Cy3GbcXgITKPmYpaBNTfG
+HnYUTUAjQlFxjmvkbzFL6HjL7fWc/x+a1+UdQVdusMyhNPGXFpUBF22zi7FHOD5g
+uK3bmdJPijTqtunSYKnDhqL5zQsPkoQwMW0UEqYBHSi3iYcYizWEfMs4vjRk1jKG
+U9RF/ekkHByDTxcBDVPi7wmg0zqu0mDzLfLVbUkCoaWzS5Hls19GaFl8B3QO17vo
+KrauQTFGQkUJ8PfkFSoqjPsnajOuVai7YPKf5wzmhmQrhVumlqiZkDPalBRkZD8C
+AwEAAaNTMFEwHQYDVR0OBBYEFPogEAakP0v/3v8w+gGyIvy0+9gLMB8GA1UdIwQY
+MBaAFPogEAakP0v/3v8w+gGyIvy0+9gLMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI
+hvcNAQELBQADggEBADbIrwqAvvyboxP05c/KrBFT0pclXiVCpvLfMPVXN7adSCpd
+NMMDI+2bPKE+o1QW01jbR5j/k8J/eAb793aM57aZrOvYqAFR5FJCW5SATegXBnOs
+8N3Bv2AOe0KIt1zE8bzPUyML96+MpMhhTf6Cj212pXzKaIfPxhwEpvBEiFzXGVez
+xNuF1VIczLs+bRIA8oFGEZhklq7QD117malYpfYj6TOGGM2JJ1pDbtgdP45Mdljx
+DLjMEHv7nTB2oal4l5NmQMs4k/Nevv6bmfbzOp1swxrMEwE3s8WCfQfojbKXu+u0
+eJ8zc9bH0XeHNDTH6UxlYdDu/8yBe1WBrl+Zeeo=
+-----END CERTIFICATE-----
+)EOF";
+
+const char SSL_KEY[] PROGMEM = R"EOF(
+-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCr/rjdXWOV5Cmo
+YsGfktmlkaQvcgimxsPMn8qkEPxdZrTkPFshnlbGoJiAAiQhcbBNwstxm3F4CEyj
+5mKWgTU3xh52FE1AI0JRcY5r5G8xS+h4y+31nP8fmtflHUFXbrDMoTTxlxaVARdt
+s4uxRzg+YLit25nST4o06rbp0mCpw4ai+c0LD5KEMDFtFBKmAR0ot4mHGIs1hHzL
+OL40ZNYyhlPURf3pJBwcg08XAQ1T4u8JoNM6rtJg8y3y1W1JAqGls0uR5bNfRmhZ
+fAd0Dte76Cq2rkExRkJFCfD35BUqKoz7J2ozrlWou2Dyn+cM5oZkK4VbppaomZAz
+2pQUZGQ/AgMBAAECggEAAbn2Ur6CZo7vk3GeU5g5QriyBwnkKAG8axGQNVJi/hsE
+UNAsSADwtQtdTIJOU4mdGpgMdmZNiXC9ODNH+mPEoXvbHWtPFTLlZ6+LSEOhkW3w
+y5mcbgfhOwjRBvXity/KFYZpY3gVRsdH3Bbecu1DQBkKHDClRspRRFO2JKWzHlvE
+VH79jznTLZ8ftcRuCOfQaBh19krxrb4LIpBia1bS2RADAHMKJ9aQm9xDqSs/WrxM
+JAmSp/M7jNcLb5XSPMEERvEi5kS8/k1Qd5syh51nIPP+SbKSmtTvGhjCx7HkrSax
+/FHeddHILFrSXSqm1UmUzh64bqyWi+TXyIEhqet1eQKBgQDuZ56XJ55g0rRLTP7v
+MQTQfqWoHbvEU7rykLzPW3wCo2j2wGZHQmM1z0oPTxM7yCcdW5FsC+qo6OQikro4
+BnEBLVfb9gqwWbvI0Y7is4LoAXnW1wLcTrh3Dp5afjAJpTkqD8XxstuZ2Z7hIKmN
+XiDVOsxb7sJNr4SO/ID1gk+H5wKBgQC4sF4biUSLFyF8UTEKSm6GbKJ+mM+nauDf
+SDoK2CqV/KbnwxuaSl9vxIymahz2U+U/W0gDzyRZLV5jywYyoup4225fK+tiWWon
+UASzD9S+XIgtd7B3FTGnhyii0N8pZvaFnQW3Jh7RB5sVpl7nW/rn0xlJs5Sd4YQr
+bymO2s5V6QKBgBk2hjQwMXTF8+Fe1DtRsNOoATcFZf0+abALlJxNbZEN3STzdh2l
+LL7dHFUAJOWWpmRZcci+feO9NZtebylLrRnVxMvzem/qHY0AdJ8PIxIMTelltdy8
+yo900VR6sfPjMGd9YY7NPqJHvKDMhoH36XsDi+dRGeWDYX6Jv823KVgTAoGAd4Pa
+QmN/8apURwibfZdRErg2J0poBmUJhDRPKzlbxZerworlz+CVBdThV8ePWnBMB8Xg
+QmbHlNXhIR7+scHvjaoiMIBRYGGQakRD5kQ2XcGvdgzgKw+SBGFYkJQt9bLlkO1e
+B3kptAcB+u6gt4M0SNS4ppMJd2m6iAj1kbZSlBECgYBqXaNFXBH7zau16WnrHuYe
+bdfTWG2uIqvIRmX6st0lAvjxaZ3j48nBzIyvpk3Fb4LXFhwnOC0f8ySp5lSewjdr
+fKwv5tqt1HM8Zk6TtSfYAr3172nijFNpk4jQNpPM5lWNbvQpQRK9HZtUqTQ705MH
+d71jpvkmu89ebsYP1yprQQ==
+-----END PRIVATE KEY-----
+)EOF";
+
 // -------------------- Global State -------------------------
 enum DeviceMode { MODE_SETUP, MODE_NORMAL };
 DeviceMode currentMode = MODE_SETUP;
 
 DNSServer       dnsServer;
-WEBSERVER       httpServer(HTTP_PORT);
+WebServer       httpServer(HTTP_PORT);
 WebSocketsServer webSocket(WS_PORT);
 
 bool ledState = false;
 
-// ESP-12E built-in LED (GPIO2) is active-low: LOW = ON, HIGH = OFF
-#ifdef ESP8266
-  #define LED_ON  LOW
-  #define LED_OFF HIGH
-#else
-  #define LED_ON  HIGH
-  #define LED_OFF LOW
-#endif
+// ESP32 built-in LED: HIGH = ON, LOW = OFF
+#define LED_ON  HIGH
+#define LED_OFF LOW
 
 // -------------------- Credential Storage -------------------
-#ifdef ESP32
-  Preferences prefs;
-#endif
+Preferences prefs;
 
-// EEPROM layout for ESP8266:
-// Byte 0:       Magic marker (0xAA = credentials saved)
-// Bytes 1-32:   SSID  (null-terminated, max 32 chars)
-// Bytes 33-96:  Password (null-terminated, max 63 chars)
-#define EEPROM_SIZE     128
-#define EEPROM_MAGIC    0xAA
-#define SSID_OFFSET     1
-#define SSID_MAX_LEN    32
-#define PASS_OFFSET     33
-#define PASS_MAX_LEN    64
-
+// ESP32 uses Preferences (NVS) for credential storage
 String loadSSID() {
-  #ifdef ESP32
-    prefs.begin("wifi", true);
-    String s = prefs.getString("ssid", "");
-    prefs.end();
-    return s;
-  #else
-    EEPROM.begin(EEPROM_SIZE);
-    if (EEPROM.read(0) != EEPROM_MAGIC) {
-      EEPROM.end();
-      return "";
-    }
-    char buf[SSID_MAX_LEN + 1];
-    for (int i = 0; i < SSID_MAX_LEN; i++) buf[i] = EEPROM.read(SSID_OFFSET + i);
-    buf[SSID_MAX_LEN] = '\0';
-    EEPROM.end();
-    return String(buf);
-  #endif
+  prefs.begin("wifi", true);
+  String s = prefs.getString("ssid", "");
+  prefs.end();
+  return s;
 }
 
 String loadPassword() {
-  #ifdef ESP32
-    prefs.begin("wifi", true);
-    String p = prefs.getString("pass", "");
-    prefs.end();
-    return p;
-  #else
-    EEPROM.begin(EEPROM_SIZE);
-    if (EEPROM.read(0) != EEPROM_MAGIC) {
-      EEPROM.end();
-      return "";
-    }
-    char buf[PASS_MAX_LEN + 1];
-    for (int i = 0; i < PASS_MAX_LEN; i++) buf[i] = EEPROM.read(PASS_OFFSET + i);
-    buf[PASS_MAX_LEN] = '\0';
-    EEPROM.end();
-    return String(buf);
-  #endif
+  prefs.begin("wifi", true);
+  String p = prefs.getString("pass", "");
+  prefs.end();
+  return p;
 }
 
 void saveCredentials(const String& ssid, const String& pass) {
-  #ifdef ESP32
-    prefs.begin("wifi", false);
-    prefs.putString("ssid", ssid);
-    prefs.putString("pass", pass);
-    prefs.end();
-  #else
-    EEPROM.begin(EEPROM_SIZE);
-    EEPROM.write(0, EEPROM_MAGIC);
-    for (int i = 0; i < SSID_MAX_LEN; i++) {
-      EEPROM.write(SSID_OFFSET + i, i < (int)ssid.length() ? ssid[i] : 0);
-    }
-    for (int i = 0; i < PASS_MAX_LEN; i++) {
-      EEPROM.write(PASS_OFFSET + i, i < (int)pass.length() ? pass[i] : 0);
-    }
-    EEPROM.commit();
-    EEPROM.end();
-  #endif
-  Serial.println("Credentials saved to flash.");
+  prefs.begin("wifi", false);
+  prefs.putString("ssid", ssid);
+  prefs.putString("pass", pass);
+  prefs.end();
+  Serial.println("Credentials saved to NVS.");
 }
 
 void clearCredentials() {
-  #ifdef ESP32
-    prefs.begin("wifi", false);
-    prefs.clear();
-    prefs.end();
-  #else
-    EEPROM.begin(EEPROM_SIZE);
-    EEPROM.write(0, 0x00);
-    EEPROM.commit();
-    EEPROM.end();
-  #endif
-  Serial.println("Credentials cleared.");
+  prefs.begin("wifi", false);
+  prefs.clear();
+  prefs.end();
+  Serial.println("Credentials cleared from NVS.");
 }
 
 // -------------------- Captive Portal HTML ------------------
@@ -396,32 +387,49 @@ const char SETUP_HTML[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 // -------------------- WebSocket Handlers -------------------
+
+// Broadcast state only to authenticated clients
 void broadcastState() {
   String msg = ledState ? "STATE:ON" : "STATE:OFF";
-  webSocket.broadcastTXT(msg);
+  for (uint8_t i = 0; i < MAX_WS_CLIENTS; i++) {
+    if (clientAuthenticated[i]) {
+      webSocket.sendTXT(i, msg);
+    }
+  }
 }
 
 void handleMessage(uint8_t num, String msg) {
-  Serial.println("Received: " + msg);
+  // Input sanitization: reject oversized messages
+  if (msg.length() > 32) {
+    Serial.println("Rejected oversized message from client " + String(num));
+    return;
+  }
+
+  Serial.println("Received from client " + String(num) + ": " + msg);
 
   if (msg == "ON") {
     ledState = true;
     digitalWrite(LED_BUILTIN, LED_ON);
     broadcastState();
-  }
-
-  if (msg == "OFF") {
+  } else if (msg == "OFF") {
     ledState = false;
     digitalWrite(LED_BUILTIN, LED_OFF);
     broadcastState();
-  }
-
-  if (msg == "RESET") {
+  } else if (msg == "RESET") {
     Serial.println("Factory reset requested remotely.");
-    webSocket.broadcastTXT("RESETTING");
+    // Send RESETTING only to authenticated clients
+    for (uint8_t i = 0; i < MAX_WS_CLIENTS; i++) {
+      if (clientAuthenticated[i]) {
+        webSocket.sendTXT(i, "RESETTING");
+      }
+    }
     clearCredentials();
     delay(1000);
     ESP.restart();
+  } else if (msg == "PING") {
+    // Heartbeat — no action needed
+  } else {
+    Serial.println("Unknown command ignored: " + msg);
   }
 }
 
@@ -429,21 +437,52 @@ void onEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
   switch (type) {
 
     case WStype_CONNECTED:
-      Serial.println("Client connected");
-
-      if (ledState) webSocket.sendTXT(num, "STATE:ON");
-      else webSocket.sendTXT(num, "STATE:OFF");
-
+      Serial.println("Client " + String(num) + " connected — awaiting auth");
+      // Mark as unauthenticated
+      if (num < MAX_WS_CLIENTS) {
+        clientAuthenticated[num] = false;
+      }
+      // Prompt client to authenticate
+      webSocket.sendTXT(num, "AUTH_REQUIRED");
       break;
 
     case WStype_TEXT: {
       String msg = String((char*)payload).substring(0, length);
+
+      // ── Authentication gate ──
+      if (num < MAX_WS_CLIENTS && !clientAuthenticated[num]) {
+        // Expect: AUTH:<shared_secret>
+        if (msg.startsWith("AUTH:")) {
+          String token = msg.substring(5);
+          if (token == WS_AUTH_KEY) {
+            clientAuthenticated[num] = true;
+            Serial.println("Client " + String(num) + " authenticated");
+            webSocket.sendTXT(num, "AUTH_OK");
+            // Send current state after successful auth
+            if (ledState) webSocket.sendTXT(num, "STATE:ON");
+            else webSocket.sendTXT(num, "STATE:OFF");
+          } else {
+            Serial.println("Client " + String(num) + " auth FAILED");
+            webSocket.sendTXT(num, "AUTH_FAIL");
+            webSocket.disconnect(num);
+          }
+        } else {
+          // Not an auth message — reject
+          webSocket.sendTXT(num, "AUTH_REQUIRED");
+        }
+        break;
+      }
+
+      // ── Authenticated client — process command ──
       handleMessage(num, msg);
       break;
     }
 
     case WStype_DISCONNECTED:
-      Serial.println("Client disconnected");
+      Serial.println("Client " + String(num) + " disconnected");
+      if (num < MAX_WS_CLIENTS) {
+        clientAuthenticated[num] = false;
+      }
       break;
   }
 }
@@ -471,7 +510,13 @@ void handleInfo() {
 }
 
 // LED status endpoint (available in normal mode for app state polling)
+// Protected by auth token query parameter: /status?token=<WS_AUTH_KEY>
 void handleStatus() {
+  String token = httpServer.arg("token");
+  if (token != WS_AUTH_KEY) {
+    httpServer.send(401, "text/plain", "Unauthorized");
+    return;
+  }
   String json = "{\"led\":";
   json += ledState ? "true" : "false";
   json += ",\"ip\":\"" + WiFi.localIP().toString() + "\"}";
@@ -509,7 +554,7 @@ void startSetupMode() {
   Serial.println("Starting access point: " + String(AP_SSID));
 
   WiFi.mode(WIFI_AP);
-  WiFi.softAP(AP_SSID);
+  WiFi.softAP(AP_SSID, AP_PASSWORD);
 
   delay(100);
   Serial.print("AP IP address: ");
@@ -572,10 +617,10 @@ void startNormalMode() {
   httpServer.begin();
   Serial.println("HTTP status endpoint active on port " + String(HTTP_PORT));
 
-  // WebSocket server
-  webSocket.begin();
+  // Secure WebSocket server (wss://)
+  webSocket.beginSSL(SSL_CERT, SSL_KEY);
   webSocket.onEvent(onEvent);
-  Serial.println("WebSocket started on port " + String(WS_PORT));
+  Serial.println("Secure WebSocket (wss://) started on port " + String(WS_PORT));
 }
 
 // -------------------- Factory Reset Check ------------------
@@ -648,10 +693,6 @@ void loop() {
   } else {
     webSocket.loop();
     httpServer.handleClient();  // Handle /status requests in normal mode
-
-    #ifdef ESP8266
-      MDNS.update();
-    #endif
   }
 
   // Check for factory reset during operation

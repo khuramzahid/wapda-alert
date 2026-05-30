@@ -71,6 +71,8 @@ export function discoverDeviceViaNSD(onProgress, timeoutMs = 6000) {
   });
 }
 
+const WS_AUTH_KEY = 'wapda-secret-2026';  // Must match firmware
+
 // ── Strategy 2: Subnet scan (fallback) ──────────────────────────────
 
 /**
@@ -106,7 +108,7 @@ export async function discoverDeviceOnNetwork(onProgress) {
 
     for (let i = 1; i <= 254; i++) {
       const ip = subnet + i;
-      fetch(`http://${ip}/status`, { signal: AbortSignal.timeout(1500) })
+      fetch(`http://${ip}/status?token=${WS_AUTH_KEY}`, { signal: AbortSignal.timeout(1500) })
         .then((resp) => (resp.ok ? resp.json() : null))
         .then((data) => {
           if (!found && data && typeof data.led === 'boolean') {

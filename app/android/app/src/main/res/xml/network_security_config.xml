@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network Security Configuration for WAPDA Alert.
+  
+  Cleartext (HTTP) traffic is denied globally, EXCEPT to 192.168.4.1
+  which is the ESP32's SoftAP IP used during device setup (captive portal).
+  All other traffic (including wss:// WebSocket) uses TLS.
+-->
+<network-security-config>
+  <!-- Default: block cleartext everywhere -->
+  <base-config cleartextTrafficPermitted="false">
+    <trust-anchors>
+      <certificates src="system" />
+    </trust-anchors>
+  </base-config>
+
+  <!-- Exception: allow cleartext only to the ESP32 captive portal IP -->
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">192.168.4.1</domain>
+  </domain-config>
+</network-security-config>

@@ -2,6 +2,7 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import WifiManager from 'react-native-wifi-reborn';
 
 const AP_PREFIX = 'WAPDA-Alert';
+const AP_PASSWORD = 'wapda1234';  // WPA2 password for device setup AP
 
 /**
  * Request ACCESS_FINE_LOCATION permission (required for WiFi scanning on Android).
@@ -53,7 +54,7 @@ export async function scanForDevices() {
 }
 
 /**
- * Connect the phone to an ESP8266 AP (open network, no password).
+ * Connect the phone to an ESP8266 AP (WPA2 protected).
  * @param {string} ssid - The AP SSID to connect to (e.g., "WAPDA-Alert-0F2F")
  * @returns {Promise<void>}
  */
@@ -63,9 +64,9 @@ export async function connectToDeviceAP(ssid) {
     throw new Error('Location permission denied.');
   }
 
-  // Connect to open (no password) network
+  // Connect to WPA2-protected setup network
   // connectToProtectedSSID(ssid, password, isWEP, isHidden)
-  await WifiManager.connectToProtectedSSID(ssid, '', false, false);
+  await WifiManager.connectToProtectedSSID(ssid, AP_PASSWORD, false, false);
 }
 
 /**
