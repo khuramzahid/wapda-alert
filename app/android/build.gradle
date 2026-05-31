@@ -38,13 +38,4 @@ allprojects {
         mavenCentral()
         maven { url 'https://www.jitpack.io' }
     }
-
-    // Force androidx.core >= 1.13.1 for ServiceCompat.startForeground() 4-arg overload
-    // Required by react-native-background-actions
-    configurations.all {
-        resolutionStrategy {
-            force 'androidx.core:core:1.13.1'
-            force 'androidx.core:core-ktx:1.13.1'
-        }
-    }
 }

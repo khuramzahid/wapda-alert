@@ -150,10 +150,6 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
-    // Force androidx.core >= 1.13.1 for ServiceCompat.startForeground() 4-arg overload
-    // Required by react-native-background-actions
-    implementation("androidx.core:core:1.13.1")
-
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
     def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";

@@ -43,7 +43,8 @@
           "icon": "./assets/notification-icon.png",
           "color": "#3b82f6"
         }
-      ]
+      ],
+      "./withAndroidBackgroundFix.js"
     ],
     "ios": {
       "bundleIdentifier": "com.wapdaalert.app"
