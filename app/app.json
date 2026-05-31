@@ -9,7 +9,9 @@
     "splash": {
       "backgroundColor": "#0a0e1a"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#0a0e1a"
@@ -23,8 +25,10 @@
         "CHANGE_NETWORK_STATE",
         "ACCESS_NETWORK_STATE",
         "FOREGROUND_SERVICE",
-        "WAKE_LOCK"
-      ]
+        "WAKE_LOCK",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "usesCleartextTraffic": true
     },
     "plugins": [
       [
@@ -40,6 +44,9 @@
           "color": "#3b82f6"
         }
       ]
-    ]
+    ],
+    "ios": {
+      "bundleIdentifier": "com.wapdaalert.app"
+    }
   }
 }

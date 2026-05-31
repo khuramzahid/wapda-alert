@@ -15,7 +15,7 @@ Before you begin, make sure you have:
 
 ## Step 1 — Prepare `app.json` for Production
 
-Update your [app.json](file:///home/aisha/Documents/ESP8266/wapda-alert/app/app.json) with production-ready values:
+Update app.json with production-ready values:
 
 ```jsonc
 {
@@ -43,7 +43,7 @@ Update your [app.json](file:///home/aisha/Documents/ESP8266/wapda-alert/app/app.
 
 ## Step 2 — Configure Production Build in `eas.json`
 
-Your [eas.json](file:///home/aisha/Documents/ESP8266/wapda-alert/app/eas.json) already has a `production` profile, but it needs to be configured to produce an AAB (Android App Bundle — required by Play Store):
+Your eas.json file already has a `production` profile, but it needs to be configured to produce an AAB (Android App Bundle — required by Play Store):
 
 ```jsonc
 {

@@ -2,11 +2,6 @@ package com.wapdaalert.app
 
 import android.app.Application
 import android.content.res.Configuration
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.os.Build
 
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
@@ -58,12 +53,5 @@ class MainApplication : Application(), ReactApplication {
   override fun onConfigurationChanged(newConfig: Configuration) {
     super.onConfigurationChanged(newConfig)
     ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig)
-  }
-
-  override fun registerReceiver(receiver: BroadcastReceiver?, filter: IntentFilter?): Intent? {
-    if (Build.VERSION.SDK_INT >= 34 && applicationInfo.targetSdkVersion >= 34) {
-      return super.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
-    }
-    return super.registerReceiver(receiver, filter)
   }
 }

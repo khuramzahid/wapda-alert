@@ -2,10 +2,8 @@
  * WebSocketService — Singleton WebSocket manager for ESP8266 communication.
  *
  * Handles connection, auto-reconnect with exponential backoff,
- * heartbeat pings, token-based authentication, and state change listeners.
+ * heartbeat pings, and state change listeners.
  */
-
-const WS_AUTH_KEY = 'wapda-secret-2026';  // Must match firmware WS_AUTH_KEY
 
 class WebSocketService {
   constructor() {
@@ -14,7 +12,6 @@ class WebSocketService {
     this.listeners = new Set();
     this.connectionListeners = new Set();
     this.connected = false;
-    this.authenticated = false;
     this.lastLedState = null;
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
@@ -56,8 +53,6 @@ class WebSocketService {
       this.ws = null;
     }
 
-    this.authenticated = false;
-
     console.log(`[WS] Connecting to ${this.url}`);
     this.ws = new WebSocket(this.url);
 
@@ -70,61 +65,16 @@ class WebSocketService {
     }, 5000);
 
     this.ws.onopen = () => {
-      console.log('[WS] Connected, awaiting auth challenge');
+      console.log('[WS] Connected');
       clearTimeout(connTimeout);
       this.connected = true;
       this.reconnectDelay = 2000; // Reset backoff
-      // Don't notify connection listeners yet — wait for AUTH_OK
+      this._notifyConnectionListeners(true);
+      this._startHeartbeat();
     };
 
     this.ws.onmessage = (event) => {
-      const raw = event.data;
-
-      // ── Input sanitization ──
-      // 1. Reject non-string or oversized messages
-      if (typeof raw !== 'string' || raw.length > 64) {
-        console.warn('[WS] Dropped message: invalid type or too long', typeof raw, raw?.length);
-        return;
-      }
-
-      // 2. Strip non-printable characters (keep ASCII 32-126)
-      const data = raw.replace(/[^\x20-\x7E]/g, '');
-
-      // ── Authentication protocol ──
-      if (data === 'AUTH_REQUIRED') {
-        console.log('[WS] Auth required, sending credentials');
-        this.ws.send(`AUTH:${WS_AUTH_KEY}`);
-        return;
-      }
-
-      if (data === 'AUTH_OK') {
-        console.log('[WS] Authenticated successfully');
-        this.authenticated = true;
-        this._notifyConnectionListeners(true);
-        this._startHeartbeat();
-        return;
-      }
-
-      if (data === 'AUTH_FAIL') {
-        console.error('[WS] Authentication FAILED — wrong key');
-        this.authenticated = false;
-        this.intentionalClose = true; // Don't auto-reconnect on auth failure
-        return;
-      }
-
-      // ── State messages (only process if authenticated) ──
-      if (!this.authenticated) {
-        console.warn('[WS] Dropped message before auth:', data);
-        return;
-      }
-
-      // 3. Allowlist: only process known protocol messages
-      const ALLOWED_MESSAGES = ['STATE:ON', 'STATE:OFF', 'RESETTING'];
-      if (!ALLOWED_MESSAGES.includes(data)) {
-        console.warn('[WS] Dropped message: not in allowlist:', data);
-        return;
-      }
-
+      const data = event.data;
       console.log('[WS] Message:', data);
 
       if (data === 'STATE:ON' || data === 'STATE:OFF') {
@@ -251,7 +201,6 @@ class WebSocketService {
       this.ws = null;
     }
     this.connected = false;
-    this.authenticated = false;
     this.lastLedState = null;
   }
 

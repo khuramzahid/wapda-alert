@@ -1,7 +1,6 @@
 // ============================================================
 //  WAPDA Alert — ESP32 / ESP8266 Firmware
 //  WiFi provisioning via SoftAP + Captive Portal
-//  WebSockets (ws://) with token authentication
 // ============================================================
 
 // -------------------- Platform Includes --------------------
@@ -32,18 +31,12 @@
 // -------------------- Constants ----------------------------
 const char* AP_PREFIX        = "WAPDA-Alert";
 char AP_SSID[24];  // Built dynamically: "WAPDA-Alert-XXXX" (MAC suffix)
-const char* AP_PASSWORD      = "wapda1234";  // WPA2 password for setup AP
 const char* MDNS_HOSTNAME    = "wapda-alert";
 const int   DNS_PORT         = 53;
 const int   HTTP_PORT        = 80;
 const int   WS_PORT          = 81;
 const unsigned long RESET_HOLD_MS   = 5000;  // 5-second hold to factory reset
 const unsigned long WIFI_TIMEOUT_MS = 15000; // 15 seconds to connect before falling back to AP
-
-// -------------------- Authentication -----------------------
-const char* WS_AUTH_KEY = "wapda-secret-2026";  // Shared secret for WebSocket auth
-#define MAX_WS_CLIENTS 5
-bool clientAuthenticated[MAX_WS_CLIENTS] = { false };
 
 // -------------------- Global State -------------------------
 enum DeviceMode { MODE_SETUP, MODE_NORMAL };
@@ -126,7 +119,6 @@ void saveCredentials(const String& ssid, const String& pass) {
     prefs.putString("ssid", ssid);
     prefs.putString("pass", pass);
     prefs.end();
-    Serial.println("Credentials saved to NVS.");
   #else
     EEPROM.begin(EEPROM_SIZE);
     EEPROM.write(0, EEPROM_MAGIC);
@@ -138,8 +130,8 @@ void saveCredentials(const String& ssid, const String& pass) {
     }
     EEPROM.commit();
     EEPROM.end();
-    Serial.println("Credentials saved to EEPROM.");
   #endif
+  Serial.println("Credentials saved to flash.");
 }
 
 void clearCredentials() {
@@ -147,14 +139,13 @@ void clearCredentials() {
     prefs.begin("wifi", false);
     prefs.clear();
     prefs.end();
-    Serial.println("Credentials cleared from NVS.");
   #else
     EEPROM.begin(EEPROM_SIZE);
     EEPROM.write(0, 0x00);
     EEPROM.commit();
     EEPROM.end();
-    Serial.println("Credentials cleared from EEPROM.");
   #endif
+  Serial.println("Credentials cleared.");
 }
 
 // -------------------- Captive Portal HTML ------------------
@@ -405,49 +396,32 @@ const char SETUP_HTML[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 // -------------------- WebSocket Handlers -------------------
-
-// Broadcast state only to authenticated clients
 void broadcastState() {
   String msg = ledState ? "STATE:ON" : "STATE:OFF";
-  for (uint8_t i = 0; i < MAX_WS_CLIENTS; i++) {
-    if (clientAuthenticated[i]) {
-      webSocket.sendTXT(i, msg);
-    }
-  }
+  webSocket.broadcastTXT(msg);
 }
 
 void handleMessage(uint8_t num, String msg) {
-  // Input sanitization: reject oversized messages
-  if (msg.length() > 32) {
-    Serial.println("Rejected oversized message from client " + String(num));
-    return;
-  }
-
-  Serial.println("Received from client " + String(num) + ": " + msg);
+  Serial.println("Received: " + msg);
 
   if (msg == "ON") {
     ledState = true;
     digitalWrite(LED_BUILTIN, LED_ON);
     broadcastState();
-  } else if (msg == "OFF") {
+  }
+
+  if (msg == "OFF") {
     ledState = false;
     digitalWrite(LED_BUILTIN, LED_OFF);
     broadcastState();
-  } else if (msg == "RESET") {
+  }
+
+  if (msg == "RESET") {
     Serial.println("Factory reset requested remotely.");
-    // Send RESETTING only to authenticated clients
-    for (uint8_t i = 0; i < MAX_WS_CLIENTS; i++) {
-      if (clientAuthenticated[i]) {
-        webSocket.sendTXT(i, "RESETTING");
-      }
-    }
+    webSocket.broadcastTXT("RESETTING");
     clearCredentials();
     delay(1000);
     ESP.restart();
-  } else if (msg == "PING") {
-    // Heartbeat — no action needed
-  } else {
-    Serial.println("Unknown command ignored: " + msg);
   }
 }
 
@@ -455,52 +429,21 @@ void onEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
   switch (type) {
 
     case WStype_CONNECTED:
-      Serial.println("Client " + String(num) + " connected — awaiting auth");
-      // Mark as unauthenticated
-      if (num < MAX_WS_CLIENTS) {
-        clientAuthenticated[num] = false;
-      }
-      // Prompt client to authenticate
-      webSocket.sendTXT(num, "AUTH_REQUIRED");
+      Serial.println("Client connected");
+
+      if (ledState) webSocket.sendTXT(num, "STATE:ON");
+      else webSocket.sendTXT(num, "STATE:OFF");
+
       break;
 
     case WStype_TEXT: {
       String msg = String((char*)payload).substring(0, length);
-
-      // ── Authentication gate ──
-      if (num < MAX_WS_CLIENTS && !clientAuthenticated[num]) {
-        // Expect: AUTH:<shared_secret>
-        if (msg.startsWith("AUTH:")) {
-          String token = msg.substring(5);
-          if (token == WS_AUTH_KEY) {
-            clientAuthenticated[num] = true;
-            Serial.println("Client " + String(num) + " authenticated");
-            webSocket.sendTXT(num, "AUTH_OK");
-            // Send current state after successful auth
-            if (ledState) webSocket.sendTXT(num, "STATE:ON");
-            else webSocket.sendTXT(num, "STATE:OFF");
-          } else {
-            Serial.println("Client " + String(num) + " auth FAILED");
-            webSocket.sendTXT(num, "AUTH_FAIL");
-            webSocket.disconnect(num);
-          }
-        } else {
-          // Not an auth message — reject
-          webSocket.sendTXT(num, "AUTH_REQUIRED");
-        }
-        break;
-      }
-
-      // ── Authenticated client — process command ──
       handleMessage(num, msg);
       break;
     }
 
     case WStype_DISCONNECTED:
-      Serial.println("Client " + String(num) + " disconnected");
-      if (num < MAX_WS_CLIENTS) {
-        clientAuthenticated[num] = false;
-      }
+      Serial.println("Client disconnected");
       break;
   }
 }
@@ -528,13 +471,7 @@ void handleInfo() {
 }
 
 // LED status endpoint (available in normal mode for app state polling)
-// Protected by auth token query parameter: /status?token=<WS_AUTH_KEY>
 void handleStatus() {
-  String token = httpServer.arg("token");
-  if (token != WS_AUTH_KEY) {
-    httpServer.send(401, "text/plain", "Unauthorized");
-    return;
-  }
   String json = "{\"led\":";
   json += ledState ? "true" : "false";
   json += ",\"ip\":\"" + WiFi.localIP().toString() + "\"}";
@@ -572,7 +509,7 @@ void startSetupMode() {
   Serial.println("Starting access point: " + String(AP_SSID));
 
   WiFi.mode(WIFI_AP);
-  WiFi.softAP(AP_SSID, AP_PASSWORD);
+  WiFi.softAP(AP_SSID);
 
   delay(100);
   Serial.print("AP IP address: ");
