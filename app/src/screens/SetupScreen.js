@@ -10,7 +10,6 @@ import {
   Easing,
   StatusBar,
   Alert,
-  Dimensions,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { colors, fonts, spacing, radii } from '../theme/colors';
@@ -19,7 +18,6 @@ import {
   connectToDeviceAP,
   disconnectFromAP,
   fetchDeviceInfo,
-  requestLocationPermission,
 } from '../services/WifiService';
 import { saveDevice } from '../services/DeviceStorage';
 import {
@@ -28,24 +26,28 @@ import {
 } from '../services/BackgroundService';
 import { findDevice } from '../services/DiscoveryService';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ── Stages ──
 const STAGE = {
+  MENU: 'menu',
   SCANNING: 'scanning',
   CONNECTING: 'connecting',
   CONFIGURING: 'configuring',
+  NETWORK_SCANNING: 'network_scanning',
   WAITING: 'waiting',
 };
 
 export default function SetupScreen({ navigation }) {
-  const [stage, setStage] = useState(STAGE.SCANNING);
+  const [stage, setStage] = useState(STAGE.MENU);
   const [devices, setDevices] = useState([]);
   const [scanning, setScanning] = useState(false);
   const [selectedAP, setSelectedAP] = useState(null);
   const [deviceInfo, setDeviceInfo] = useState(null);
   const [error, setError] = useState(null);
   const [waitMessage, setWaitMessage] = useState('');
+
+  // Cancellation ref for network scanning
+  const abortNetworkScan = useRef(false);
 
   // Animated values
   const pulseAnim = useRef(new Animated.Value(0.6)).current;
@@ -80,13 +82,9 @@ export default function SetupScreen({ navigation }) {
     }).start();
   }, []);
 
-  // ── Auto-scan on mount ──
-  useEffect(() => {
-    handleScan();
-  }, []);
-
-  // ── WiFi Scan ──
+  // ── Option 1: WiFi Scan (Setup New Device) ──
   const handleScan = useCallback(async () => {
+    setStage(STAGE.SCANNING);
     setScanning(true);
     setError(null);
     try {
@@ -102,6 +100,60 @@ export default function SetupScreen({ navigation }) {
     }
   }, []);
 
+  // ── Option 2: Network Scan (Find Existing Device) ──
+  const handleNetworkScan = async () => {
+    setStage(STAGE.NETWORK_SCANNING);
+    setError(null);
+    setWaitMessage('Searching your home network...');
+    abortNetworkScan.current = false;
+    
+    let deviceIP = null;
+    for (let attempt = 1; attempt <= 3 && !deviceIP; attempt++) {
+      if (abortNetworkScan.current) return;
+      
+      setWaitMessage(`Searching your home network... (attempt ${attempt}/3)`);
+      deviceIP = await findDevice(setWaitMessage);
+      if (!deviceIP && attempt < 3) {
+        // wait before next attempt, but check abort
+        for(let i=0; i<10; i++) {
+          if (abortNetworkScan.current) return;
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+    }
+
+    if (abortNetworkScan.current) return;
+
+    if (deviceIP) {
+      setWaitMessage('Device found! Setting up notifications...');
+      await saveDevice({
+        ip: deviceIP,
+        mac: 'unknown',
+        apSSID: 'Network-Discovered',
+      });
+      
+      const hasPermission = await requestNotificationPermission();
+      if (hasPermission) {
+        try {
+          await startBackgroundMonitoring(deviceIP);
+        } catch (e) {
+          console.log('Background monitoring setup deferred:', e.message);
+        }
+      }
+      
+      if (abortNetworkScan.current) return;
+      navigation.replace('Control');
+    } else {
+      setError('Could not find any WAPDA Alert device on your home network.');
+      setStage(STAGE.MENU);
+    }
+  };
+
+  const cancelNetworkScan = () => {
+    abortNetworkScan.current = true;
+    setStage(STAGE.MENU);
+  };
+
   // ── Connect to device AP ──
   const handleSelectDevice = useCallback(async (device) => {
     setSelectedAP(device.SSID);
@@ -115,14 +167,14 @@ export default function SetupScreen({ navigation }) {
       await new Promise((r) => setTimeout(r, 2000));
 
       // Fetch device info from the AP
+      let info = { mac: 'unknown', ssid: device.SSID };
       try {
-        const info = await fetchDeviceInfo();
-        setDeviceInfo(info);
+        info = await fetchDeviceInfo();
       } catch (e) {
-        // Info endpoint may not respond immediately, use AP SSID as fallback
-        setDeviceInfo({ mac: 'unknown', ssid: device.SSID });
+        // Info endpoint may not respond immediately, use fallback
       }
-
+      setDeviceInfo(info);
+      
       setStage(STAGE.CONFIGURING);
     } catch (e) {
       setError('Failed to connect to ' + device.SSID + ': ' + e.message);
@@ -130,86 +182,46 @@ export default function SetupScreen({ navigation }) {
     }
   }, []);
 
-  // ── WebView message handler — detect successful config ──
-  const handleWebViewNavigationChange = useCallback(
-    (navState) => {
-      // We inject JS to detect the success message
-    },
-    []
-  );
-
-  const INJECTED_JS = `
-    (function() {
-      // Poll for the success message in the captive portal
-      var checkInterval = setInterval(function() {
-        var status = document.getElementById('status');
-        if (status && status.textContent.indexOf('Saved!') !== -1) {
-          clearInterval(checkInterval);
-          window.ReactNativeWebView.postMessage('CONFIG_DONE');
-        }
-      }, 500);
-      true;
-    })();
-  `;
-
-
+  // ── WebView Message Handler ──
   const handleWebViewMessage = useCallback(
     async (event) => {
-      if (event.nativeEvent.data === 'CONFIG_DONE') {
+      let data;
+      try {
+        data = JSON.parse(event.nativeEvent.data);
+      } catch (e) {
+        return;
+      }
+      
+      if (data && data.type === 'CONFIG_DONE' && data.ip) {
         setStage(STAGE.WAITING);
         setWaitMessage('Device saved WiFi credentials.\nDisconnecting from setup AP...');
 
         // Disconnect from the ESP8266 AP
         await disconnectFromAP();
 
-        // Wait for phone to rejoin home WiFi (~2s) AND for the ESP8266 to
-        // restart + connect to home WiFi + get a DHCP IP (~10-15s).
-        setWaitMessage('Waiting for device to join your network...');
-        await new Promise((r) => setTimeout(r, 18000));
+        // Save the device info
+        await saveDevice({
+          ip: data.ip,
+          mac: deviceInfo?.mac || 'unknown',
+          apSSID: selectedAP,
+        });
 
-        // With the 15s wait, Android's mDNS stack has time to stabilize on the new network.
-        // We use findDevice which tries NSD (mDNS) first, then falls back to subnet scan.
-        let deviceIP = null;
-        for (let attempt = 1; attempt <= 3 && !deviceIP; attempt++) {
-          setWaitMessage(`Searching for device via mDNS... (attempt ${attempt}/3)`);
-          deviceIP = await findDevice(setWaitMessage);
-          if (!deviceIP && attempt < 3) {
-            setWaitMessage('Device not found yet, retrying...');
-            await new Promise((r) => setTimeout(r, 2000));
+        // Request notification permission & auto-start background monitoring
+        setWaitMessage('Device found! Setting up notifications...');
+        const hasPermission = await requestNotificationPermission();
+        if (hasPermission) {
+          try {
+            await startBackgroundMonitoring(data.ip);
+          } catch (e) {
+            console.log('Background monitoring setup deferred:', e.message);
           }
         }
 
-        if (deviceIP) {
-          // Save the device info
-          await saveDevice({
-            ip: deviceIP,
-            mac: deviceInfo?.mac || 'unknown',
-            apSSID: selectedAP,
-          });
+        setWaitMessage('All set! Opening controls...');
+        await new Promise((r) => setTimeout(r, 1000));
 
-          // Request notification permission & auto-start background monitoring
-          setWaitMessage('Device found! Setting up notifications...');
-          const hasPermission = await requestNotificationPermission();
-          if (hasPermission) {
-            try {
-              await startBackgroundMonitoring(deviceIP);
-            } catch (e) {
-              console.log('Background monitoring setup deferred:', e.message);
-            }
-          }
-
-          setWaitMessage('All set! Opening controls...');
-          await new Promise((r) => setTimeout(r, 1000));
-
-          // Navigate to Control screen
-          navigation.replace('Control');
-        } else {
-          setError(
-            'Could not find the device on your home network. ' +
-            'Please make sure the device and phone are on the same WiFi network, then try again.'
-          );
-          setStage(STAGE.SCANNING);
-        }
+        // Navigate to Control screen
+        navigation.replace('Control');
       }
     },
     [deviceInfo, selectedAP, navigation]
@@ -230,6 +242,45 @@ export default function SetupScreen({ navigation }) {
     return colors.danger;
   };
 
+  // ── Render: Menu Stage ──
+  const renderMenu = () => (
+    <Animated.View style={[styles.centeredContainer, { opacity: fadeAnim }]}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
+      
+      <Text style={styles.radarIcon}>⚡</Text>
+      <Text style={styles.title}>Welcome</Text>
+      <Text style={styles.subtitle}>
+        How would you like to connect your WAPDA Alert device?
+      </Text>
+
+      {error && (
+        <View style={styles.errorCard}>
+          <Text style={styles.errorText}>⚠️ {error}</Text>
+        </View>
+      )}
+
+      <TouchableOpacity
+        style={[styles.menuButton, { marginTop: spacing.xxl }]}
+        onPress={() => { setError(null); handleScan(); }}
+      >
+        <Text style={styles.menuButtonTitle}>Set Up New Device</Text>
+        <Text style={styles.menuButtonDesc}>
+          Connect to the device's WiFi to give it your home network credentials.
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.menuButton, styles.menuButtonSecondary]}
+        onPress={handleNetworkScan}
+      >
+        <Text style={[styles.menuButtonTitle, styles.menuButtonTitleSecondary]}>Find on Network</Text>
+        <Text style={[styles.menuButtonDesc, styles.menuButtonDescSecondary]}>
+          Scan your current WiFi network for an already configured device.
+        </Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+
   // ── Render: Scanning Stage ──
   const renderScanning = () => (
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
@@ -237,6 +288,9 @@ export default function SetupScreen({ navigation }) {
 
       {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity style={styles.backButtonTop} onPress={() => setStage(STAGE.MENU)}>
+          <Text style={styles.backButtonText}>←</Text>
+        </TouchableOpacity>
         <Animated.Text
           style={[styles.radarIcon, { opacity: pulseAnim, transform: [{ scale: pulseAnim }] }]}
         >
@@ -376,9 +430,7 @@ export default function SetupScreen({ navigation }) {
       <WebView
         source={{ uri: 'http://192.168.4.1/' }}
         style={styles.webview}
-        injectedJavaScript={INJECTED_JS}
         onMessage={handleWebViewMessage}
-        onNavigationStateChange={handleWebViewNavigationChange}
         javaScriptEnabled
         domStorageEnabled
         startInLoadingState
@@ -394,14 +446,14 @@ export default function SetupScreen({ navigation }) {
     </View>
   );
 
-  // ── Render: Waiting Stage ──
+  // ── Render: Waiting/Network Scanning Stage ──
   const renderWaiting = () => (
     <View style={styles.centeredContainer}>
       <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
       <Animated.Text
         style={[styles.waitingIcon, { opacity: pulseAnim }]}
       >
-        ⏳
+        {stage === STAGE.NETWORK_SCANNING ? '🔍' : '⏳'}
       </Animated.Text>
       <ActivityIndicator
         size="large"
@@ -410,6 +462,15 @@ export default function SetupScreen({ navigation }) {
       />
       <Text style={styles.waitingText}>{waitMessage}</Text>
 
+      {stage === STAGE.NETWORK_SCANNING && (
+        <TouchableOpacity
+          style={[styles.scanButton, { marginTop: spacing.xl, paddingHorizontal: spacing.xl }]}
+          onPress={cancelNetworkScan}
+        >
+          <Text style={styles.scanButtonText}>Cancel Search</Text>
+        </TouchableOpacity>
+      )}
+
       {error && (
         <View style={[styles.errorCard, { marginTop: spacing.lg }]}>
           <Text style={styles.errorText}>⚠️ {error}</Text>
@@ -417,10 +478,10 @@ export default function SetupScreen({ navigation }) {
             style={[styles.scanButton, { marginTop: spacing.md }]}
             onPress={() => {
               setError(null);
-              setStage(STAGE.SCANNING);
+              setStage(STAGE.MENU);
             }}
           >
-            <Text style={styles.scanButtonText}>Back to Scan</Text>
+            <Text style={styles.scanButtonText}>Back to Menu</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -429,6 +490,8 @@ export default function SetupScreen({ navigation }) {
 
   // ── Main Render Switch ──
   switch (stage) {
+    case STAGE.MENU:
+      return renderMenu();
     case STAGE.SCANNING:
       return renderScanning();
     case STAGE.CONNECTING:
@@ -436,9 +499,10 @@ export default function SetupScreen({ navigation }) {
     case STAGE.CONFIGURING:
       return renderConfiguring();
     case STAGE.WAITING:
+    case STAGE.NETWORK_SCANNING:
       return renderWaiting();
     default:
-      return renderScanning();
+      return renderMenu();
   }
 }
 
@@ -459,6 +523,50 @@ const styles = StyleSheet.create({
   webviewContainer: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  
+  // Menu styles
+  menuButton: {
+    backgroundColor: colors.primary,
+    borderRadius: radii.md,
+    padding: spacing.lg,
+    width: '100%',
+    marginBottom: spacing.md,
+  },
+  menuButtonSecondary: {
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  menuButtonTitle: {
+    color: colors.white,
+    fontSize: fonts.sizes.lg,
+    fontWeight: fonts.weights.bold,
+    marginBottom: spacing.xs,
+  },
+  menuButtonDesc: {
+    color: colors.white + 'CC',
+    fontSize: fonts.sizes.sm,
+    lineHeight: 20,
+  },
+  menuButtonTitleSecondary: {
+    color: colors.textPrimary,
+  },
+  menuButtonDescSecondary: {
+    color: colors.textSecondary,
+  },
+
+  // Back button
+  backButtonTop: {
+    position: 'absolute',
+    top: spacing.md,
+    left: spacing.lg,
+    padding: spacing.sm,
+    zIndex: 10,
+  },
+  backButtonText: {
+    fontSize: 28,
+    color: colors.textSecondary,
   },
 
   // Header

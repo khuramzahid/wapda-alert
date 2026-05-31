@@ -47,6 +47,7 @@ WEBSERVER       httpServer(HTTP_PORT);
 WebSocketsServer webSocket(WS_PORT);
 
 bool ledState = false;
+bool pendingRestart = false;
 
 // ESP-12E built-in LED (GPIO2) is active-low: LOW = ON, HIGH = OFF
 #ifdef ESP8266
@@ -377,10 +378,16 @@ const char SETUP_HTML[] PROGMEM = R"rawliteral(
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'ssid=' + encodeURIComponent(ssid) + '&pass=' + encodeURIComponent(pass)
       })
-      .then(r => r.text())
-      .then(() => {
+      .then(r => {
+        if (!r.ok) throw new Error('Network error');
+        return r.json();
+      })
+      .then((data) => {
         status.className = 'status success';
-        status.textContent = 'Saved! Device is restarting...';
+        status.textContent = 'Saved! Connected to ' + data.ip;
+        if (window.ReactNativeWebView) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'CONFIG_DONE', ip: data.ip }));
+        }
       })
       .catch(() => {
         status.className = 'status error';
@@ -474,7 +481,8 @@ void handleInfo() {
 void handleStatus() {
   String json = "{\"led\":";
   json += ledState ? "true" : "false";
-  json += ",\"ip\":\"" + WiFi.localIP().toString() + "\"}";
+  json += ",\"ip\":\"" + WiFi.localIP().toString() + "\"";
+  json += ",\"mac\":\"" + WiFi.macAddress() + "\"}";
   httpServer.send(200, "application/json", json);
 }
 
@@ -483,16 +491,41 @@ void handleSave() {
   String pass = httpServer.arg("pass");
 
   if (ssid.length() == 0) {
-    httpServer.send(400, "text/plain", "SSID is required");
+    httpServer.send(400, "application/json", "{\"error\":\"SSID is required\"}");
     return;
   }
 
-  saveCredentials(ssid, pass);
-  httpServer.send(200, "text/plain", "OK");
+  Serial.println("Received credentials for: " + ssid);
 
-  Serial.println("Credentials saved. Restarting in 2 seconds...");
-  delay(2000);
-  ESP.restart();
+  // Switch to WIFI_AP_STA so we keep the AP running while connecting
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.begin(ssid.c_str(), pass.c_str());
+
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    if (millis() - start > WIFI_TIMEOUT_MS) {
+      Serial.println("Failed to connect to home WiFi during setup.");
+      WiFi.disconnect();
+      // Keep AP active
+      WiFi.mode(WIFI_AP);
+      httpServer.send(400, "application/json", "{\"error\":\"Failed to connect to network\"}");
+      return;
+    }
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nConnected to home WiFi!");
+  Serial.print("Assigned IP: ");
+  Serial.println(WiFi.localIP());
+
+  saveCredentials(ssid, pass);
+
+  String json = "{\"status\":\"connected\",\"ip\":\"" + WiFi.localIP().toString() + "\"}";
+  httpServer.send(200, "application/json", json);
+
+  Serial.println("Response sent. Restarting in 2 seconds...");
+  pendingRestart = true;
 }
 
 // Redirect all unknown URLs to the setup page (captive portal behavior)
@@ -656,4 +689,9 @@ void loop() {
 
   // Check for factory reset during operation
   checkFactoryReset();
+
+  if (pendingRestart) {
+    delay(2000);
+    ESP.restart();
+  }
 }
