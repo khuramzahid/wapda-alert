@@ -59,11 +59,10 @@ Built with Expo and React Native.
 ---
 
 ## 📱 Screenshots
-*(Replace these placeholders with actual screenshots of your app)*
 
 | Onboarding Flow | Network Scanning | Real-Time Dashboard |
 | :---: | :---: | :---: |
-| <img src="https://via.placeholder.com/250x500.png?text=Setup+Screen" width="250" /> | <img src="https://via.placeholder.com/250x500.png?text=Network+Scan" width="250" /> | <img src="https://via.placeholder.com/250x500.png?text=Dashboard" width="250" /> |
+| <img src="docs/setup-screen-wifi-ap.jpeg" width="250" alt="Setup Screen" /> | <img src="docs/network-scan.jpeg" width="250" alt="Network Scan" /> | <img src="docs/control-screen.jpeg" width="250" alt="Dashboard" /> |
 
 ---
 
