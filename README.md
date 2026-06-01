@@ -4,7 +4,7 @@ A robust IoT solution for monitoring local power grids (WAPDA) in real-time, fea
 
 > **Note to recruiters & developers:** This repository serves as a portfolio project showcasing full-stack IoT capabilities, including embedded C++ firmware engineering, React Native mobile development, WebSocket networking, and custom network discovery protocols. 
 
-[👉 **View the Project Landing Page**](https://your-github-username.github.io/wapda-alert/)
+[👉 **View the Project Landing Page**](https://khuramzahid.github.io/wapda-alert/)
 
 ---
 

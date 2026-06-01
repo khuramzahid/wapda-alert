@@ -1,20 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WAPDA Alert | IoT Power Monitoring</title>
-  <meta name="description" content="A robust IoT solution for monitoring local power grids in real-time, featuring custom ESP8266 hardware and a React Native mobile application.">
+  <meta name="description"
+    content="A robust IoT solution for monitoring local power grids in real-time, featuring custom ESP8266 hardware and a React Native mobile application.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@500;700;800&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-  
+
   <div class="blob blob-1"></div>
   <div class="blob blob-2"></div>
-  
+
   <header class="glass-header">
     <div class="logo">
       <span class="lightning">⚡</span> WAPDA Alert
@@ -22,15 +27,16 @@
     <nav>
       <a href="#features">Features</a>
       <a href="#architecture">Architecture</a>
-      <a href="https://github.com/your-username/wapda-alert" class="btn-primary" target="_blank">View on GitHub</a>
+      <a href="https://github.com/khuramzahid/wapda-alert" class="btn-primary" target="_blank">View on GitHub</a>
     </nav>
   </header>
 
   <main>
     <section class="hero">
       <div class="hero-content">
-        <h1 class="fade-in-up">Instant Power Monitoring. <br/><span class="text-gradient">Zero Friction.</span></h1>
-        <p class="fade-in-up delay-1">A full-stack IoT solution bridging embedded C++ firmware with a premium React Native mobile experience. Designed for real-time local grid alerts.</p>
+        <h1 class="fade-in-up">Instant Power Monitoring. <br /><span class="text-gradient">Zero Friction.</span></h1>
+        <p class="fade-in-up delay-1">A full-stack IoT solution bridging embedded C++ firmware with a premium React
+          Native mobile experience. Designed for real-time local grid alerts.</p>
         <div class="hero-actions fade-in-up delay-2">
           <a href="#features" class="btn-secondary">Explore Features</a>
         </div>
@@ -47,31 +53,36 @@
         <div class="card glass-card reveal">
           <div class="card-icon">🚀</div>
           <h3>Instant Hybrid Provisioning</h3>
-          <p>The ESP8266 hosts a temporary Captive Portal AP. The React Native app connects directly, securely passes WiFi credentials via a native WebView, and receives the new IP synchronously.</p>
+          <p>The ESP8266 hosts a temporary Captive Portal AP. The React Native app connects directly, securely passes
+            WiFi credentials via a native WebView, and receives the new IP synchronously.</p>
         </div>
 
         <div class="card glass-card reveal delay-1">
           <div class="card-icon">📡</div>
           <h3>Robust Network Discovery</h3>
-          <p>Employs a custom fallback mechanism combining mDNS and a multithreaded Subnet Ping Sweep. If the device's IP changes dynamically, the app finds it instantly.</p>
+          <p>Employs a custom fallback mechanism combining mDNS and a multithreaded Subnet Ping Sweep. If the device's
+            IP changes dynamically, the app finds it instantly.</p>
         </div>
 
         <div class="card glass-card reveal delay-2">
           <div class="card-icon">🔔</div>
           <h3>Background Monitoring</h3>
-          <p>Maintains persistent device connection even when closed. Native Android background tasks monitor power states and push local notifications immediately upon grid changes.</p>
+          <p>Maintains persistent device connection even when closed. Native Android background tasks monitor power
+            states and push local notifications immediately upon grid changes.</p>
         </div>
 
         <div class="card glass-card reveal">
           <div class="card-icon">⚡</div>
           <h3>Real-Time WebSockets</h3>
-          <p>Low-latency, bidirectional WebSocket communication ensures state changes are reflected in the UI within milliseconds, alongside instant hardware control.</p>
+          <p>Low-latency, bidirectional WebSocket communication ensures state changes are reflected in the UI within
+            milliseconds, alongside instant hardware control.</p>
         </div>
 
         <div class="card glass-card reveal delay-1">
           <div class="card-icon">📱</div>
           <h3>Remote Management</h3>
-          <p>Over-The-Air (OTA) style factory resets. Users can clear WiFi credentials and place the device back into setup mode remotely directly from the mobile interface.</p>
+          <p>Over-The-Air (OTA) style factory resets. Users can clear WiFi credentials and place the device back into
+            setup mode remotely directly from the mobile interface.</p>
         </div>
       </div>
     </section>
@@ -105,9 +116,10 @@
   </main>
 
   <footer>
-    <p>Designed and built for IoT excellence. <a href="https://github.com/your-username/wapda-alert">View Source</a></p>
+    <p>Designed and built for IoT excellence. <a href="https://github.com/khuramzahid/wapda-alert">View Source</a></p>
   </footer>
 
   <script src="script.js"></script>
 </body>
+
 </html>
