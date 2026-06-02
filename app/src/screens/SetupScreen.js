@@ -127,8 +127,10 @@ export default function SetupScreen({ navigation }) {
     if (deviceIP) {
       setWaitMessage('Device found! Setting up notifications...');
       await saveDevice({
-        ip: deviceIP,
-        mac: 'unknown',
+        deviceIp: deviceIP,
+        deviceId: 'unknown',
+        deviceType: 'esp8266',
+        lastConnected: Date.now(),
         apSSID: 'Network-Discovered',
       });
       
@@ -201,8 +203,10 @@ export default function SetupScreen({ navigation }) {
 
         // Save the device info
         await saveDevice({
-          ip: data.ip,
-          mac: deviceInfo?.mac || 'unknown',
+          deviceIp: data.ip,
+          deviceId: deviceInfo?.deviceId || deviceInfo?.mac || 'unknown',
+          deviceType: 'esp8266',
+          lastConnected: Date.now(),
           apSSID: selectedAP,
         });
 

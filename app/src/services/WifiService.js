@@ -81,18 +81,6 @@ export async function disconnectFromAP() {
   }
 }
 
-/**
- * Get the currently connected WiFi SSID.
- * @returns {Promise<string|null>}
- */
-export async function getCurrentSSID() {
-  try {
-    const ssid = await WifiManager.getCurrentWifiSSID();
-    return ssid;
-  } catch (e) {
-    return null;
-  }
-}
 
 /**
  * Fetch device info from the ESP8266 captive portal /info endpoint.

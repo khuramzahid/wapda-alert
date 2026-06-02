@@ -20,6 +20,7 @@
 
 #include <DNSServer.h>
 #include <WebSocketsServer.h>
+#include <WiFiUdp.h>
 
 // -------------------- Pin Definitions ----------------------
 #ifndef LED_BUILTIN
@@ -35,6 +36,7 @@ const char* MDNS_HOSTNAME    = "wapda-alert";
 const int   DNS_PORT         = 53;
 const int   HTTP_PORT        = 80;
 const int   WS_PORT          = 81;
+const int   UDP_PORT         = 8888;
 const unsigned long RESET_HOLD_MS   = 5000;  // 5-second hold to factory reset
 const unsigned long WIFI_TIMEOUT_MS = 15000; // 15 seconds to connect before falling back to AP
 
@@ -45,6 +47,10 @@ DeviceMode currentMode = MODE_SETUP;
 DNSServer       dnsServer;
 WEBSERVER       httpServer(HTTP_PORT);
 WebSocketsServer webSocket(WS_PORT);
+WiFiUDP         udp;
+
+int activeClients = 0;
+const int MAX_CLIENTS = 4;
 
 bool ledState = false;
 bool pendingRestart = false;
@@ -404,28 +410,33 @@ const char SETUP_HTML[] PROGMEM = R"rawliteral(
 
 // -------------------- WebSocket Handlers -------------------
 void broadcastState() {
-  String msg = ledState ? "STATE:ON" : "STATE:OFF";
+  String msg = "{\"type\":\"state_update\",\"led_status\":";
+  msg += ledState ? "true" : "false";
+  msg += ",\"timestamp\":";
+  msg += String(millis());
+  msg += "}";
   webSocket.broadcastTXT(msg);
 }
 
 void handleMessage(uint8_t num, String msg) {
   Serial.println("Received: " + msg);
 
-  if (msg == "ON") {
-    ledState = true;
-    digitalWrite(LED_BUILTIN, LED_ON);
+  if (msg.indexOf("\"command\":\"toggle_led\"") != -1) {
+    ledState = !ledState;
+    digitalWrite(LED_BUILTIN, ledState ? LED_ON : LED_OFF);
     broadcastState();
   }
 
-  if (msg == "OFF") {
-    ledState = false;
-    digitalWrite(LED_BUILTIN, LED_OFF);
-    broadcastState();
+  if (msg.indexOf("\"type\":\"ping\"") != -1) {
+    String pong = "{\"type\":\"pong\",\"timestamp\":";
+    pong += String(millis());
+    pong += "}";
+    webSocket.sendTXT(num, pong);
   }
 
-  if (msg == "RESET") {
+  if (msg.indexOf("\"command\":\"reset\"") != -1 || msg == "RESET") {
     Serial.println("Factory reset requested remotely.");
-    webSocket.broadcastTXT("RESETTING");
+    webSocket.broadcastTXT("{\"type\":\"resetting\"}");
     clearCredentials();
     delay(1000);
     ESP.restart();
@@ -437,10 +448,23 @@ void onEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
 
     case WStype_CONNECTED:
       Serial.println("Client connected");
+      if (activeClients >= MAX_CLIENTS) {
+        Serial.println("Max clients reached. Rejecting connection.");
+        webSocket.disconnect(num);
+        return;
+      }
+      activeClients++;
 
-      if (ledState) webSocket.sendTXT(num, "STATE:ON");
-      else webSocket.sendTXT(num, "STATE:OFF");
-
+      {
+        String msg = "{\"type\":\"initial_state\",\"led_status\":";
+        msg += ledState ? "true" : "false";
+        msg += ",\"device_id\":\"";
+        msg += WiFi.macAddress();
+        msg += "\",\"uptime\":";
+        msg += String(millis() / 1000);
+        msg += "}";
+        webSocket.sendTXT(num, msg);
+      }
       break;
 
     case WStype_TEXT: {
@@ -451,6 +475,7 @@ void onEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
 
     case WStype_DISCONNECTED:
       Serial.println("Client disconnected");
+      if (activeClients > 0) activeClients--;
       break;
   }
 }
@@ -473,16 +498,19 @@ void handleScan() {
 
 // Device info endpoint (available in setup mode for app provisioning)
 void handleInfo() {
-  String json = "{\"mac\":\"" + WiFi.macAddress() + "\",\"ssid\":\"" + String(AP_SSID) + "\"}";
+  String json = "{\"device_id\":\"" + WiFi.macAddress() + "\",\"device_type\":\"esp8266\"}";
   httpServer.send(200, "application/json", json);
 }
 
 // LED status endpoint (available in normal mode for app state polling)
 void handleStatus() {
-  String json = "{\"led\":";
+  String json = "{\"device_id\":\"" + WiFi.macAddress() + "\"";
+  json += ",\"led_status\":";
   json += ledState ? "true" : "false";
-  json += ",\"ip\":\"" + WiFi.localIP().toString() + "\"";
-  json += ",\"mac\":\"" + WiFi.macAddress() + "\"}";
+  json += ",\"device_type\":\"esp8266\"";
+  json += ",\"uptime\":";
+  json += String(millis() / 1000);
+  json += "}";
   httpServer.send(200, "application/json", json);
 }
 
@@ -595,10 +623,16 @@ void startNormalMode() {
     Serial.println("Error starting mDNS");
   } else {
     Serial.println("mDNS started: " + String(MDNS_HOSTNAME) + ".local");
-    // Advertise HTTP service so Android NSD can discover us instantly
-    MDNS.addService("http", "tcp", HTTP_PORT);
-    Serial.println("mDNS service advertised: _http._tcp on port " + String(HTTP_PORT));
+    // Advertise esp8266-device service
+    MDNS.addService("esp8266-device", "tcp", WS_PORT);
+    MDNS.addServiceTxt("esp8266-device", "tcp", "device_id", WiFi.macAddress());
+    MDNS.addServiceTxt("esp8266-device", "tcp", "device_type", "esp8266");
+    Serial.println("mDNS service advertised: _esp8266-device._tcp on port " + String(WS_PORT));
   }
+
+  // UDP Discovery Server
+  udp.begin(UDP_PORT);
+  Serial.println("UDP Discovery server started on port " + String(UDP_PORT));
 
   // HTTP server (for /status endpoint in normal mode)
   httpServer.on("/status", HTTP_GET, handleStatus);
@@ -681,6 +715,23 @@ void loop() {
   } else {
     webSocket.loop();
     httpServer.handleClient();  // Handle /status requests in normal mode
+
+    // Handle UDP discovery requests
+    int packetSize = udp.parsePacket();
+    if (packetSize) {
+      char incomingPacket[255];
+      int len = udp.read(incomingPacket, 255);
+      if (len > 0) {
+        incomingPacket[len] = '\0';
+        String msg = String(incomingPacket);
+        if (msg.indexOf("\"type\":\"discover\"") != -1) {
+          String response = "{\"device_ip\":\"" + WiFi.localIP().toString() + "\",\"device_id\":\"" + WiFi.macAddress() + "\",\"device_type\":\"esp8266\"}";
+          udp.beginPacket(udp.remoteIP(), udp.remotePort());
+          udp.write(response.c_str());
+          udp.endPacket();
+        }
+      }
+    }
 
     #ifdef ESP8266
       MDNS.update();

@@ -41,7 +41,7 @@ export default function AppNavigator() {
       setStatusMsg('Checking saved device...');
       const device = await loadDevice();
       
-      if (device && device.ip) {
+      if (device && (device.deviceIp || device.ip)) {
         // Everyday Use: We have a saved device, go straight to control (Instant)
         setInitialRoute('Control');
       } else {
@@ -52,7 +52,12 @@ export default function AppNavigator() {
 
         if (discoveredIP) {
           // Found an already-configured device on the network! Save it.
-          await saveDevice({ ip: discoveredIP, mac: 'unknown', apSSID: 'unknown' });
+          await saveDevice({ 
+            deviceIp: discoveredIP, 
+            deviceId: 'unknown', 
+            deviceType: 'esp8266',
+            lastConnected: Date.now()
+          });
           setInitialRoute('Control');
         } else {
           // Not found on network. Assume it's brand new and needs hardware setup.

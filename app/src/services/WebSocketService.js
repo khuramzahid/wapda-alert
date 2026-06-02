@@ -17,6 +17,8 @@ class WebSocketService {
     this.heartbeatTimer = null;
     this.reconnectDelay = 2000; // Start at 2s, max 30s
     this.intentionalClose = false;
+    this.messageQueue = [];
+    this.missedHeartbeats = 0;
   }
 
   /**
@@ -69,27 +71,40 @@ class WebSocketService {
       clearTimeout(connTimeout);
       this.connected = true;
       this.reconnectDelay = 2000; // Reset backoff
+      this.missedHeartbeats = 0;
       this._notifyConnectionListeners(true);
       this._startHeartbeat();
+      this._flushQueue();
     };
 
     this.ws.onmessage = (event) => {
-      const data = event.data;
-      console.log('[WS] Message:', data);
+      try {
+        const data = JSON.parse(event.data);
+        console.log('[WS] Message:', data);
 
-      if (data === 'STATE:ON' || data === 'STATE:OFF') {
-        const newState = data === 'STATE:ON';
-        const changed = this.lastLedState !== null && this.lastLedState !== newState;
-        this.lastLedState = newState;
-        this._notifyListeners(newState, changed);
+        if (data.type === 'pong') {
+          this.missedHeartbeats = 0;
+        } else if (data.type === 'state_update' || data.type === 'initial_state') {
+          const newState = data.led_status;
+          const changed = this.lastLedState !== null && this.lastLedState !== newState;
+          this.lastLedState = newState;
+          this._notifyListeners(newState, changed);
+        }
+      } catch (e) {
+        console.log('[WS] Ignore non-JSON message:', event.data);
       }
     };
 
     this.ws.onclose = (event) => {
       console.log('[WS] Closed:', event.code, event.reason);
+      
+      const wasConnected = this.connected;
       this.connected = false;
       this._stopHeartbeat();
-      this._notifyConnectionListeners(false);
+      
+      if (wasConnected) {
+        this._notifyConnectionListeners(false);
+      }
 
       if (!this.intentionalClose) {
         this._scheduleReconnect();
@@ -116,15 +131,22 @@ class WebSocketService {
 
   _startHeartbeat() {
     this._stopHeartbeat();
+    this.missedHeartbeats = 0;
     this.heartbeatTimer = setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        if (this.missedHeartbeats >= 2) {
+          console.log('[WS] Missed heartbeats, closing connection');
+          try { this.ws.close(); } catch (e) {}
+          return;
+        }
         try {
-          this.ws.send('PING');
+          this.missedHeartbeats++;
+          this.ws.send(JSON.stringify({ type: 'ping' }));
         } catch (e) {
           // Connection may have died
         }
       }
-    }, 15000);
+    }, 10000); // Send ping every 10s
   }
 
   _stopHeartbeat() {
@@ -134,15 +156,32 @@ class WebSocketService {
     }
   }
 
+  _flushQueue() {
+    while (this.messageQueue.length > 0 && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      const msg = this.messageQueue.shift();
+      try {
+        this.ws.send(msg);
+      } catch (e) {
+        this.messageQueue.unshift(msg);
+        break;
+      }
+    }
+  }
+
   /**
    * Send a command to the ESP8266.
-   * @param {'ON' | 'OFF'} command
+   * @param {object} payload
    */
-  send(command) {
+  send(payload) {
+    const msg = JSON.stringify(payload);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(command);
+      this.ws.send(msg);
     } else {
-      console.warn('[WS] Cannot send, not connected');
+      console.warn('[WS] Not connected, queueing message');
+      this.messageQueue.push(msg);
+      if (this.messageQueue.length > 10) {
+        this.messageQueue.shift(); // Drop oldest message
+      }
     }
   }
 

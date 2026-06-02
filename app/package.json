@@ -24,7 +24,8 @@
     "react-native-screens": "~4.4.0",
     "react-native-webview": "13.12.5",
     "react-native-wifi-reborn": "^4.12.2",
-    "react-native-zeroconf": "^0.14.0"
+    "react-native-zeroconf": "^0.14.0",
+    "react-native-udp": "^4.1.7"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0"

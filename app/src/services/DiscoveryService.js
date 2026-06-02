@@ -1,25 +1,63 @@
 /**
  * DiscoveryService — Finds WAPDA Alert devices on the local network.
  *
- * Strategy 1: NSD/Zeroconf — Uses Android's native Network Service Discovery
- *             to find the ESP8266's advertised _http._tcp service instantly.
- * Strategy 2: Subnet scan — Fast fallback that hits /status on each local IP.
+ * Strategy 1: mDNS — Uses Android's native Network Service Discovery
+ *             to find the ESP8266's advertised _esp8266-device._tcp service.
+ * Strategy 2: UDP Broadcast — Fast fallback that hits port 8888.
  */
 
 import Zeroconf from 'react-native-zeroconf';
-import WifiManager from 'react-native-wifi-reborn';
+import UdpSockets from 'react-native-udp';
 
-// ── Strategy 1: NSD / Zeroconf (near-instant) ──────────────────────
+const UDP_PORT = 8888;
+const MDNS_SERVICE = 'esp8266-device';
+
+// ── Verification ────────────────────────────────────────────────────────
 
 /**
- * Use Android NSD to discover our device's _http._tcp mDNS service.
- * Typically resolves within 1-3 seconds.
+ * Verify a device by hitting its /status endpoint.
  *
- * @param {(msg: string) => void} [onProgress] - Optional progress callback
- * @param {number} [timeoutMs=6000] - How long to scan before giving up
+ * @param {string} ip
+ * @returns {Promise<{deviceId: string, ledStatus: boolean, deviceType: string} | null>}
+ */
+export async function verifyDeviceIdentity(ip) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    
+    const resp = await fetch(`http://${ip}/status`, {
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeout);
+    
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data.device_type === 'esp8266' && data.device_id) {
+        return {
+          deviceId: data.device_id,
+          ledStatus: data.led_status,
+          deviceType: data.device_type,
+          ip: ip
+        };
+      }
+    }
+  } catch (e) {
+    // Timeout or network error
+  }
+  return null;
+}
+
+// ── Strategy 1: mDNS / Zeroconf ────────────────────────────────────────
+
+/**
+ * Use Android NSD to discover our device's _esp8266-device._tcp mDNS service.
+ *
+ * @param {(msg: string) => void} [onProgress]
+ * @param {number} [timeoutMs=5000]
  * @returns {Promise<string|null>} - Device IP if found, null otherwise
  */
-export function discoverDeviceViaNSD(onProgress, timeoutMs = 6000) {
+export function discoverDeviceViaMDNS(onProgress, timeoutMs = 5000) {
   const log = onProgress || (() => {});
   const zeroconf = new Zeroconf();
 
@@ -34,36 +72,31 @@ export function discoverDeviceViaNSD(onProgress, timeoutMs = 6000) {
     };
 
     zeroconf.on('resolved', (service) => {
-      // Match our device by its mDNS hostname
-      if (
-        !found &&
-        service.name &&
-        service.name.toLowerCase().includes('wapda-alert')
-      ) {
-        found = true;
+      if (!found && service.name && service.name.includes('esp8266-device')) {
         const ip =
           service.addresses && service.addresses.length > 0
             ? service.addresses[0]
             : service.host;
-        log(`Found via NSD: ${ip}`);
-        cleanup();
-        resolve(ip);
+        
+        if (ip) {
+          found = true;
+          log(`Found via mDNS: ${ip}`);
+          cleanup();
+          resolve(ip);
+        }
       }
     });
 
     zeroconf.on('error', (err) => {
-      console.log('[Discovery] NSD error:', err);
-      // Don't resolve null yet — let timeout handle it
+      console.log('[Discovery] mDNS error:', err);
     });
 
-    // Start scanning for HTTP services
-    log('Scanning for devices via NSD...');
-    zeroconf.scan('http', 'tcp', 'local.');
+    log('Scanning via mDNS...');
+    zeroconf.scan(MDNS_SERVICE, 'tcp', 'local.');
 
-    // Timeout: give up and let the caller try the next strategy
     timer = setTimeout(() => {
       if (!found) {
-        log('NSD scan timed out.');
+        log('mDNS scan timed out.');
         cleanup();
         resolve(null);
       }
@@ -71,79 +104,109 @@ export function discoverDeviceViaNSD(onProgress, timeoutMs = 6000) {
   });
 }
 
-// ── Strategy 2: Subnet scan (fallback) ──────────────────────────────
+// ── Strategy 2: UDP Broadcast ──────────────────────────────────────────
 
 /**
- * Scan the local /24 subnet for an ESP8266 running WAPDA Alert firmware.
- * Fires all 254 requests in parallel — first success wins immediately.
+ * Scan the local network via UDP Broadcast.
  *
- * @param {(msg: string) => void} [onProgress] - Optional progress callback
+ * @param {(msg: string) => void} [onProgress]
+ * @param {number} [timeoutMs=5000]
  * @returns {Promise<string|null>} - Device IP if found, null otherwise
  */
-export async function discoverDeviceOnNetwork(onProgress) {
+export function discoverDeviceViaUDP(onProgress, timeoutMs = 5000) {
   const log = onProgress || (() => {});
-
-  let phoneIP = null;
-  try {
-    phoneIP = await WifiManager.getIP();
-  } catch (e) {
-    console.log('[Discovery] Could not get phone IP:', e.message);
-    return null;
-  }
-
-  if (!phoneIP) return null;
-
-  const parts = phoneIP.split('.');
-  if (parts.length !== 4) return null;
-  const subnet = parts.slice(0, 3).join('.') + '.';
-
-  log(`Scanning ${subnet}0/24...`);
-
-  // Fire all 254 requests simultaneously — first valid response wins
+  
   return new Promise((resolve) => {
     let found = false;
-    let pending = 254;
+    let timer;
+    let broadcastInterval;
+    const socket = UdpSockets.createSocket('udp4');
+    
+    const cleanup = () => {
+      clearTimeout(timer);
+      clearInterval(broadcastInterval);
+      try { socket.close(); } catch (e) {}
+    };
 
-    for (let i = 1; i <= 254; i++) {
-      const ip = subnet + i;
-      fetch(`http://${ip}/status`, { signal: AbortSignal.timeout(1500) })
-        .then((resp) => (resp.ok ? resp.json() : null))
-        .then((data) => {
-          if (!found && data && typeof data.led === 'boolean') {
-            found = true;
-            log(`Found device at ${ip}`);
-            resolve(data.ip || ip);
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          pending--;
-          if (pending === 0 && !found) {
-            log('No device found on subnet.');
-            resolve(null);
-          }
-        });
-    }
+    socket.on('message', (msg, rinfo) => {
+      if (found) return;
+      try {
+        const data = JSON.parse(msg.toString());
+        if (data && data.device_type === 'esp8266' && data.device_id && data.device_ip) {
+          found = true;
+          log(`Found via UDP: ${data.device_ip}`);
+          cleanup();
+          resolve(data.device_ip);
+        }
+      } catch (e) {
+        // Parse error, ignore
+      }
+    });
+
+    socket.on('error', (err) => {
+      console.log('[Discovery] UDP error:', err);
+    });
+
+    socket.bind(0, () => {
+      socket.setBroadcast(true);
+      const msg = Buffer.from(JSON.stringify({ type: 'discover', version: '1.0' }));
+      
+      log('Scanning via UDP Broadcast...');
+      
+      const sendBroadcast = () => {
+        if (!found) {
+          socket.send(msg, 0, msg.length, UDP_PORT, '255.255.255.255', (err) => {
+            if (err) console.log('UDP send error:', err);
+          });
+        }
+      };
+
+      // Send immediately, then every 1 second
+      sendBroadcast();
+      broadcastInterval = setInterval(sendBroadcast, 1000);
+    });
+
+    timer = setTimeout(() => {
+      if (!found) {
+        log('UDP scan timed out.');
+        cleanup();
+        resolve(null);
+      }
+    }, timeoutMs);
   });
 }
 
-// ── Main entry point ────────────────────────────────────────────────
+// ── Main entry point ──────────────────────────────────────────────────
 
 /**
- * Try NSD first (fast, ~1-3s), then fall back to subnet scan.
+ * Try mDNS first, then fall back to UDP.
  *
- * @param {(msg: string) => void} [onProgress] - Optional progress callback
+ * @param {(msg: string) => void} [onProgress]
  * @returns {Promise<string|null>} - Device IP if found, null otherwise
  */
 export async function findDevice(onProgress) {
   const log = onProgress || (() => {});
 
-  // Strategy 1: NSD / Zeroconf (instant on Android)
-  log('Looking for device via NSD...');
-  const nsdResult = await discoverDeviceViaNSD(onProgress);
-  if (nsdResult) return nsdResult;
+  // Strategy 1: mDNS
+  log('Looking for device via mDNS...');
+  let ip = await discoverDeviceViaMDNS(onProgress);
+  
+  if (!ip) {
+    // Strategy 2: UDP Broadcast
+    log('mDNS failed. Trying UDP broadcast...');
+    ip = await discoverDeviceViaUDP(onProgress);
+  }
+  
+  if (ip) {
+    log('Verifying device identity...');
+    const identity = await verifyDeviceIdentity(ip);
+    if (identity) {
+      log('Device verified successfully.');
+      return ip;
+    } else {
+      log('Device verification failed.');
+    }
+  }
 
-  // Strategy 2: Subnet scan (reliable fallback)
-  log('NSD failed. Scanning local network...');
-  return await discoverDeviceOnNetwork(onProgress);
+  return null;
 }

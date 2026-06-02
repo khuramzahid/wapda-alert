@@ -4,7 +4,7 @@ const DEVICE_KEY = '@wapda_alert_device';
 
 /**
  * Save provisioned device info.
- * @param {{ ip: string, mac: string, apSSID: string }} device
+ * @param {{ deviceIp: string, deviceId: string, lastConnected: number, deviceType: string, apSSID?: string }} device
  */
 export async function saveDevice(device) {
   try {
@@ -16,7 +16,7 @@ export async function saveDevice(device) {
 
 /**
  * Load saved device info.
- * @returns {Promise<{ ip: string, mac: string, apSSID: string } | null>}
+ * @returns {Promise<{ deviceIp: string, deviceId: string, lastConnected: number, deviceType: string, apSSID?: string } | null>}
  */
 export async function loadDevice() {
   try {

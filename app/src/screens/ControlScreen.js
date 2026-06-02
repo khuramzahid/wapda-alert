@@ -7,7 +7,6 @@ import {
   StatusBar,
   Animated,
   Easing,
-  Switch,
   Alert,
   Vibration,
 } from 'react-native';
@@ -17,7 +16,6 @@ import { loadDevice, clearDevice } from '../services/DeviceStorage';
 import {
   startBackgroundMonitoring,
   stopBackgroundMonitoring,
-  isBackgroundMonitoringActive,
   requestNotificationPermission,
 } from '../services/BackgroundService';
 
@@ -82,12 +80,13 @@ export default function ControlScreen({ navigation }) {
 
     const init = async () => {
       const device = await loadDevice();
-      if (!device) {
+      if (!device || (!device.deviceIp && !device.ip)) {
         navigation.replace('Setup');
         return;
       }
 
-      setDeviceIP(device.ip);
+      const ip = device.deviceIp || device.ip;
+      setDeviceIP(ip);
 
       // Sync initial state if already connected via background service
       if (WebSocketService.isConnected()) {
@@ -109,10 +108,10 @@ export default function ControlScreen({ navigation }) {
       // Automatically start background monitoring (which handles WebSocket connection)
       const hasPermission = await requestNotificationPermission();
       if (hasPermission) {
-        await startBackgroundMonitoring(device.ip);
+        await startBackgroundMonitoring(ip);
       } else {
         // Fallback to regular foreground connection if permission denied
-        WebSocketService.connect(device.ip);
+        WebSocketService.connect(ip);
       }
     };
 
@@ -146,7 +145,7 @@ export default function ControlScreen({ navigation }) {
     ]).start();
 
     const expectedState = !ledOn;
-    WebSocketService.send(expectedState ? 'ON' : 'OFF');
+    WebSocketService.send({ command: 'toggle_led' });
 
     // Auto-remove device if no update is received within 5 seconds
     setTimeout(async () => {
@@ -178,7 +177,7 @@ export default function ControlScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             Vibration.vibrate(50);
-            WebSocketService.send('RESET');
+            WebSocketService.send({ command: 'reset' });
             await stopBackgroundMonitoring();
             WebSocketService.disconnect();
             await clearDevice();
