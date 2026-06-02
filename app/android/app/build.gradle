@@ -147,6 +147,7 @@ android {
 }
 
 dependencies {
+    implementation('androidx.core:core:1.13.1')
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 

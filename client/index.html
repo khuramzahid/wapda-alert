@@ -51,6 +51,7 @@
         const WS_URL = "ws://wapda-alert.local:81";
 
         let ws;
+        let lastLedStatus = null; // true/false when known, null when unknown
 
         function setStatus(text, cls) {
             const el = document.getElementById("status");
@@ -58,11 +59,23 @@
             el.className = cls;
         }
 
+        function renderLedStatus() {
+            if (lastLedStatus === true) setStatus("LED is ON", "on");
+            else if (lastLedStatus === false) setStatus("LED is OFF", "off");
+            else setStatus("Connected (state unknown)", "conn");
+        }
+
+        function sendJson(obj) {
+            if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+        }
+
         function connect() {
             ws = new WebSocket(WS_URL);
 
             ws.onopen = () => {
                 setStatus("Connected to wapda-alert.local", "conn");
+                // Ask for a fast round-trip; firmware replies with {"type":"pong",...}
+                sendJson({ type: "ping", timestamp: Date.now() });
             };
 
             ws.onclose = () => {
@@ -71,17 +84,36 @@
             };
 
             ws.onmessage = (event) => {
-                if (event.data === "STATE:ON") {
-                    setStatus("LED is ON", "on");
+                // Firmware sends JSON messages like:
+                // {"type":"initial_state","led_status":true,...}
+                // {"type":"state_update","led_status":false,...}
+                // {"type":"resetting"}
+                let data;
+                try {
+                    data = JSON.parse(event.data);
+                } catch (e) {
+                    // Backward-compat: accept legacy plain-text
+                    if (event.data === "STATE:ON") { lastLedStatus = true; renderLedStatus(); }
+                    if (event.data === "STATE:OFF") { lastLedStatus = false; renderLedStatus(); }
+                    return;
                 }
 
-                if (event.data === "STATE:OFF") {
-                    setStatus("LED is OFF", "off");
+                if (data && (data.type === "initial_state" || data.type === "state_update") && typeof data.led_status === "boolean") {
+                    lastLedStatus = data.led_status;
+                    renderLedStatus();
+                    return;
+                }
+
+                if (data && data.type === "resetting") {
+                    lastLedStatus = null;
+                    setStatus("Device is resetting...", "conn");
+                    return;
                 }
             };
         }
 
         function sendOn() {
+            // Firmware supports explicit ON/OFF (and we keep JSON as fallback).
             if (ws && ws.readyState === 1) ws.send("ON");
         }
 
@@ -91,7 +123,8 @@
 
         function sendReset() {
             if (confirm("Are you sure you want to factory reset the ESP8266? You will need to reconfigure its WiFi via the mobile app.")) {
-                if (ws && ws.readyState === 1) ws.send("RESET");
+                // Firmware accepts {"command":"reset"} OR plain "RESET"
+                sendJson({ command: "reset" });
             }
         }
 

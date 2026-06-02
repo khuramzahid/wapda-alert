@@ -5,8 +5,7 @@ import { View, Text, ActivityIndicator, StyleSheet, Animated, Easing } from 'rea
 
 import SetupScreen from '../screens/SetupScreen';
 import ControlScreen from '../screens/ControlScreen';
-import { loadDevice, saveDevice } from '../services/DeviceStorage';
-import { findDevice } from '../services/DiscoveryService';
+import { loadDevice } from '../services/DeviceStorage';
 import { colors, fonts, spacing } from '../theme/colors';
 
 const Stack = createNativeStackNavigator();
@@ -45,24 +44,9 @@ export default function AppNavigator() {
         // Everyday Use: We have a saved device, go straight to control (Instant)
         setInitialRoute('Control');
       } else {
-        // Smart First-Launch Discovery:
-        // No saved device. Scan the home network to see if it's already configured.
-        setStatusMsg('Scanning network for WAPDA Alert devices...');
-        const discoveredIP = await findDevice(setStatusMsg);
-
-        if (discoveredIP) {
-          // Found an already-configured device on the network! Save it.
-          await saveDevice({ 
-            deviceIp: discoveredIP, 
-            deviceId: 'unknown', 
-            deviceType: 'esp8266',
-            lastConnected: Date.now()
-          });
-          setInitialRoute('Control');
-        } else {
-          // Not found on network. Assume it's brand new and needs hardware setup.
-          setInitialRoute('Setup');
-        }
+        // First launch / no saved device: always go to Setup.
+        // Users can choose "Find on Network" from Setup if they want discovery.
+        setInitialRoute('Setup');
       }
     };
 

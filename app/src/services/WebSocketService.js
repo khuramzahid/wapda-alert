@@ -12,6 +12,7 @@ class WebSocketService {
     this.listeners = new Set();
     this.connectionListeners = new Set();
     this.connected = false;
+    this.connecting = false;
     this.lastLedState = null;
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
@@ -19,6 +20,15 @@ class WebSocketService {
     this.intentionalClose = false;
     this.messageQueue = [];
     this.missedHeartbeats = 0;
+  }
+
+  _normalizeLedStatus(value) {
+    if (typeof value === 'boolean') return value;
+    if (value === 1 || value === '1') return true;
+    if (value === 0 || value === '0') return false;
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return null;
   }
 
   /**
@@ -56,6 +66,7 @@ class WebSocketService {
     }
 
     console.log(`[WS] Connecting to ${this.url}`);
+    this.connecting = true;
     this.ws = new WebSocket(this.url);
 
     // Timeout to prevent hanging in "Connecting..." indefinitely
@@ -70,6 +81,7 @@ class WebSocketService {
       console.log('[WS] Connected');
       clearTimeout(connTimeout);
       this.connected = true;
+      this.connecting = false;
       this.reconnectDelay = 2000; // Reset backoff
       this.missedHeartbeats = 0;
       this._notifyConnectionListeners(true);
@@ -85,10 +97,17 @@ class WebSocketService {
         if (data.type === 'pong') {
           this.missedHeartbeats = 0;
         } else if (data.type === 'state_update' || data.type === 'initial_state') {
-          const newState = data.led_status;
-          const changed = this.lastLedState !== null && this.lastLedState !== newState;
-          this.lastLedState = newState;
-          this._notifyListeners(newState, changed);
+          const normalized = this._normalizeLedStatus(data.led_status);
+          if (normalized === null) return;
+
+          const hasPrev = this.lastLedState !== null;
+          const changed = hasPrev && this.lastLedState !== normalized;
+
+          // Only notify when the value actually changes, or when we learn it the first time.
+          if (!hasPrev || changed) {
+            this.lastLedState = normalized;
+            this._notifyListeners(normalized, changed);
+          }
         }
       } catch (e) {
         console.log('[WS] Ignore non-JSON message:', event.data);
@@ -98,16 +117,18 @@ class WebSocketService {
     this.ws.onclose = (event) => {
       console.log('[WS] Closed:', event.code, event.reason);
       
-      const wasConnected = this.connected;
       this.connected = false;
       this._stopHeartbeat();
-      
-      if (wasConnected) {
-        this._notifyConnectionListeners(false);
-      }
+      // Always notify on close. If the initial connect fails (timeout/close before OPEN),
+      // UI can otherwise get stuck showing "Connecting..." forever.
+      this._notifyConnectionListeners(false);
 
       if (!this.intentionalClose) {
+        // We will keep trying; treat as still "connecting" for UI.
+        this.connecting = true;
         this._scheduleReconnect();
+      } else {
+        this.connecting = false;
       }
     };
 
@@ -240,6 +261,7 @@ class WebSocketService {
       this.ws = null;
     }
     this.connected = false;
+    this.connecting = false;
     this.lastLedState = null;
   }
 
@@ -249,6 +271,14 @@ class WebSocketService {
    */
   isConnected() {
     return this.connected && this.ws && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * True while we are actively trying (or re-trying) to connect.
+   * @returns {boolean}
+   */
+  isConnecting() {
+    return !this.intentionalClose && this.connecting;
   }
 
   /**

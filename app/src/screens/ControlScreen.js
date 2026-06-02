@@ -102,7 +102,7 @@ export default function ControlScreen({ navigation }) {
 
       unsubConn = WebSocketService.onConnectionChange((isConn) => {
         setConnected(isConn);
-        setConnecting(false);
+        setConnecting(isConn ? false : WebSocketService.isConnecting());
       });
 
       // Automatically start background monitoring (which handles WebSocket connection)
@@ -144,23 +144,11 @@ export default function ControlScreen({ navigation }) {
       }),
     ]).start();
 
-    const expectedState = !ledOn;
-    WebSocketService.send({ command: 'toggle_led' });
+    // Firmware expects explicit commands; LED state must not change on its own.
+    // So we request the desired next state directly.
+    WebSocketService.send({ command: ledOn ? 'led_off' : 'led_on' });
 
-    // Auto-remove device if no update is received within 5 seconds
-    setTimeout(async () => {
-      if (WebSocketService.getLastState() !== expectedState) {
-        Alert.alert(
-          'Device Unreachable',
-          'No response received from the device. Removing device to allow network re-scan.'
-        );
-        await stopBackgroundMonitoring();
-        WebSocketService.disconnect();
-        await clearDevice();
-        navigation.replace('Setup');
-      }
-    }, 5000);
-  }, [connected, ledOn, navigation]);
+  }, [connected, ledOn]);
 
 
   // ── Restart device ──
@@ -254,8 +242,8 @@ export default function ControlScreen({ navigation }) {
               {connecting
                 ? 'Connecting...'
                 : connected
-                ? 'Connected'
-                : 'Disconnected'}
+                  ? 'Connected'
+                  : 'Disconnected'}
             </Text>
           </View>
         </View>

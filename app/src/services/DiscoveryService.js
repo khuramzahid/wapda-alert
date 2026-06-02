@@ -59,7 +59,13 @@ export async function verifyDeviceIdentity(ip) {
  */
 export function discoverDeviceViaMDNS(onProgress, timeoutMs = 5000) {
   const log = onProgress || (() => {});
-  const zeroconf = new Zeroconf();
+  let zeroconf;
+  try {
+    zeroconf = new Zeroconf();
+  } catch (e) {
+    log('mDNS unavailable on this build.');
+    return Promise.resolve(null);
+  }
 
   return new Promise((resolve) => {
     let found = false;
@@ -120,7 +126,14 @@ export function discoverDeviceViaUDP(onProgress, timeoutMs = 5000) {
     let found = false;
     let timer;
     let broadcastInterval;
-    const socket = UdpSockets.createSocket('udp4');
+    let socket;
+    try {
+      socket = UdpSockets.createSocket('udp4');
+    } catch (e) {
+      log('UDP discovery unavailable on this build.');
+      resolve(null);
+      return;
+    }
     
     const cleanup = () => {
       clearTimeout(timer);
@@ -149,15 +162,24 @@ export function discoverDeviceViaUDP(onProgress, timeoutMs = 5000) {
 
     socket.bind(0, () => {
       socket.setBroadcast(true);
-      const msg = Buffer.from(JSON.stringify({ type: 'discover', version: '1.0' }));
+      const msgStr = JSON.stringify({ type: 'discover', version: '1.0' });
       
       log('Scanning via UDP Broadcast...');
       
       const sendBroadcast = () => {
         if (!found) {
-          socket.send(msg, 0, msg.length, UDP_PORT, '255.255.255.255', (err) => {
-            if (err) console.log('UDP send error:', err);
-          });
+          try {
+            // react-native-udp supports sending strings on many builds.
+            // If the native module expects a Buffer, this will throw and we'll just stop UDP discovery.
+            socket.send(msgStr, 0, msgStr.length, UDP_PORT, '255.255.255.255', (err) => {
+              if (err) console.log('UDP send error:', err);
+            });
+          } catch (e) {
+            console.log('[Discovery] UDP send unsupported:', e?.message || e);
+            log('UDP discovery not supported on this device.');
+            cleanup();
+            resolve(null);
+          }
         }
       };
 

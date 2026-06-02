@@ -81,6 +81,7 @@ const bgOptions = {
  */
 const backgroundTask = async (taskData) => {
   const { delay } = taskData;
+  let lastConnectionState = null; // null until first callback
 
   // Register state change listener for notifications
   const unsubState = WebSocketService.onStateChange((ledOn, changed) => {
@@ -91,12 +92,16 @@ const backgroundTask = async (taskData) => {
 
   // Register connection listener to detect power loss
   const unsubConn = WebSocketService.onConnectionChange((isConnected) => {
+    // Deduplicate: onclose can fire repeatedly during reconnect attempts.
+    // Only notify when the connection state actually transitions.
+    if (lastConnectionState === isConnected) return;
+    lastConnectionState = isConnected;
+
     if (!isConnected) {
       // Device disconnected (power likely went out and device died)
       sendPowerNotification(false);
-    } else {
-      // Reconnected, power is back. The onStateChange will fire shortly to confirm LED state.
     }
+    // When reconnected, we wait for an actual LED state update to send "Power Restored".
   });
 
   // Keep the task alive indefinitely

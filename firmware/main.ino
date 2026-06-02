@@ -409,6 +409,13 @@ const char SETUP_HTML[] PROGMEM = R"rawliteral(
 )rawliteral";
 
 // -------------------- WebSocket Handlers -------------------
+void setLed(bool on) {
+  if (ledState == on) return; // no-op; avoid accidental toggles/duplicate commands
+  ledState = on;
+  digitalWrite(LED_BUILTIN, ledState ? LED_ON : LED_OFF);
+  broadcastState();
+}
+
 void broadcastState() {
   String msg = "{\"type\":\"state_update\",\"led_status\":";
   msg += ledState ? "true" : "false";
@@ -416,15 +423,31 @@ void broadcastState() {
   msg += String(millis());
   msg += "}";
   webSocket.broadcastTXT(msg);
+
+  // Backward-compat plain-text for simple clients
+  webSocket.broadcastTXT(ledState ? "STATE:ON" : "STATE:OFF");
 }
 
 void handleMessage(uint8_t num, String msg) {
   Serial.println("Received: " + msg);
 
-  if (msg.indexOf("\"command\":\"toggle_led\"") != -1) {
-    ledState = !ledState;
-    digitalWrite(LED_BUILTIN, ledState ? LED_ON : LED_OFF);
-    broadcastState();
+  // Explicit commands (preferred): LED must not change unless commanded.
+  if (msg == "ON" || msg.indexOf("\"command\":\"led_on\"") != -1 ||
+      msg.indexOf("\"command\":\"set_led\"") != -1 && msg.indexOf("\"value\":true") != -1) {
+    setLed(true);
+    return;
+  }
+
+  if (msg == "OFF" || msg.indexOf("\"command\":\"led_off\"") != -1 ||
+      msg.indexOf("\"command\":\"set_led\"") != -1 && msg.indexOf("\"value\":false") != -1) {
+    setLed(false);
+    return;
+  }
+
+  // Toggle (legacy / optional)
+  if (msg.indexOf("\"command\":\"toggle_led\"") != -1 || msg == "TOGGLE") {
+    setLed(!ledState);
+    return;
   }
 
   if (msg.indexOf("\"type\":\"ping\"") != -1) {
@@ -464,6 +487,9 @@ void onEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
         msg += String(millis() / 1000);
         msg += "}";
         webSocket.sendTXT(num, msg);
+
+        // Backward-compat plain-text initial state
+        webSocket.sendTXT(num, ledState ? "STATE:ON" : "STATE:OFF");
       }
       break;
 
