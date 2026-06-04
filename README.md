@@ -45,7 +45,7 @@ Built with Expo and React Native.
 ### Firmware Installation
 1. Open `firmware/main.ino` in the Arduino IDE.
 2. Install the necessary libraries: `WebSockets` by Markus Sattler.
-3. Select your ESP8266 board from the Tools menu.
+3. Select your ESP8266 board (NodeMCU 1.0 (ESP-12E Module)) from the Tools menu.
 4. Upload to the device.
 
 ### Mobile App Installation

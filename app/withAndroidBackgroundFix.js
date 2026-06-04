@@ -33,6 +33,10 @@ allprojects {
     const manifest = config.modResults;
     const app = manifest.manifest.application[0];
 
+    // Disable auto-backup so AsyncStorage (saved device IP) is not restored
+    // from cloud backup after reinstall — otherwise fresh installs skip Setup.
+    app.$['android:allowBackup'] = 'false';
+
     // Ensure cleartext traffic is enabled
     app.$['android:usesCleartextTraffic'] = 'true';
 

@@ -137,7 +137,7 @@ export default function SetupScreen({ navigation }) {
       const hasPermission = await requestNotificationPermission();
       if (hasPermission) {
         try {
-          await startBackgroundMonitoring(deviceIP);
+          await startBackgroundMonitoring(deviceIP, { fresh: true });
         } catch (e) {
           console.log('Background monitoring setup deferred:', e.message);
         }
@@ -215,7 +215,7 @@ export default function SetupScreen({ navigation }) {
         const hasPermission = await requestNotificationPermission();
         if (hasPermission) {
           try {
-            await startBackgroundMonitoring(data.ip);
+            await startBackgroundMonitoring(data.ip, { fresh: true });
           } catch (e) {
             console.log('Background monitoring setup deferred:', e.message);
           }

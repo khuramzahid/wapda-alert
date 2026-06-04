@@ -39,13 +39,24 @@ export default function AppNavigator() {
     const checkDevice = async () => {
       setStatusMsg('Checking saved device...');
       const device = await loadDevice();
+      const ip = device?.deviceIp || device?.ip;
       
-      if (device && (device.deviceIp || device.ip)) {
+      // Validate that the stored IP is a well-formed dotted-quad address.
+      // This guards against stale/corrupt AsyncStorage entries surviving
+      // across app reinstalls on Android.
+      const isValidIP = ip && /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip);
+
+      if (device && isValidIP) {
         // Everyday Use: We have a saved device, go straight to control (Instant)
         setInitialRoute('Control');
       } else {
-        // First launch / no saved device: always go to Setup.
+        // First launch / no saved device / corrupt data: always go to Setup.
         // Users can choose "Find on Network" from Setup if they want discovery.
+        if (device && !isValidIP) {
+          // Clear the corrupt entry so it doesn't confuse future launches
+          const { clearDevice } = require('../services/DeviceStorage');
+          await clearDevice();
+        }
         setInitialRoute('Setup');
       }
     };

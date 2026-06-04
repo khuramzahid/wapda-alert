@@ -121,14 +121,20 @@ const backgroundTask = async (taskData) => {
  * Start background monitoring.
  * Must be called AFTER WebSocketService.connect() has been established.
  * @param {string} ip - Device IP to maintain connection to
+ * @param {{ fresh?: boolean }} [options] - Options. Set fresh=true right after
+ *   provisioning so the service retries aggressively while the ESP reboots.
  */
-export async function startBackgroundMonitoring(ip) {
+export async function startBackgroundMonitoring(ip, { fresh = false } = {}) {
   // Ensure notification permission
   await requestNotificationPermission();
 
   // If WebSocket isn't connected yet, connect it
   if (!WebSocketService.isConnected()) {
-    WebSocketService.connect(ip);
+    if (fresh) {
+      WebSocketService.connectFresh(ip);
+    } else {
+      WebSocketService.connect(ip);
+    }
   }
 
   // Start the foreground service

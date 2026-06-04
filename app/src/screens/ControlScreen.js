@@ -105,13 +105,17 @@ export default function ControlScreen({ navigation }) {
         setConnecting(isConn ? false : WebSocketService.isConnecting());
       });
 
-      // Automatically start background monitoring (which handles WebSocket connection)
-      const hasPermission = await requestNotificationPermission();
-      if (hasPermission) {
-        await startBackgroundMonitoring(ip);
-      } else {
-        // Fallback to regular foreground connection if permission denied
-        WebSocketService.connect(ip);
+      // Start background monitoring if not already connecting from setup flow.
+      // If setup already called connectFresh(), the singleton is in aggressive-
+      // retry mode and we should not interrupt it with a regular connect().
+      if (!WebSocketService.isConnected() && !WebSocketService.isConnecting()) {
+        const hasPermission = await requestNotificationPermission();
+        if (hasPermission) {
+          await startBackgroundMonitoring(ip);
+        } else {
+          // Fallback to regular foreground connection if permission denied
+          WebSocketService.connect(ip);
+        }
       }
     };
 

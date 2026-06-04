@@ -20,6 +20,7 @@ class WebSocketService {
     this.intentionalClose = false;
     this.messageQueue = [];
     this.missedHeartbeats = 0;
+    this._freshModeUntil = 0; // timestamp: suppress backoff until this time
   }
 
   _normalizeLedStatus(value) {
@@ -48,6 +49,20 @@ class WebSocketService {
     this.url = newUrl;
     this.intentionalClose = false;
     this._doConnect();
+  }
+
+  /**
+   * Connect with aggressive retries (no exponential backoff) for the first
+   * 30 seconds.  Use this right after device provisioning when the ESP8266
+   * is still rebooting and joining the home WiFi network.
+   * @param {string} ip - Device IP address
+   * @param {number} [port=81] - WebSocket port
+   */
+  connectFresh(ip, port = 81) {
+    console.log('[WS] Fresh-connect mode: aggressive retries for 30s');
+    this._freshModeUntil = Date.now() + 30000;
+    this.reconnectDelay = 2000; // Force-reset to 2s
+    this.connect(ip, port);
   }
 
   _doConnect() {
@@ -146,8 +161,14 @@ class WebSocketService {
       this._doConnect();
     }, this.reconnectDelay);
 
-    // Exponential backoff: 2s → 4s → 8s → 16s → 30s (cap)
-    this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+    // In "fresh" mode (right after provisioning), keep retrying every 2s
+    // so the user sees "Connected" as soon as the device comes online.
+    if (Date.now() < this._freshModeUntil) {
+      this.reconnectDelay = 2000; // Stay at 2s
+    } else {
+      // Exponential backoff: 2s → 4s → 8s → 16s → 30s (cap)
+      this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+    }
   }
 
   _startHeartbeat() {

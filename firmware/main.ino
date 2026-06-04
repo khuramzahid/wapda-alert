@@ -508,7 +508,22 @@ void onEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t length) {
 
 // -------------------- HTTP Handlers (Setup Mode) -----------
 void handleRoot() {
-  httpServer.send_P(200, "text/html", SETUP_HTML);
+  // Stream the PROGMEM HTML in chunks using chunked transfer encoding.
+  // send_P() can produce ERR_CONTENT_LENGTH_MISMATCH on ESP8266 when the
+  // HTML is large or contains multi-byte UTF-8 chars (emojis).
+  httpServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  httpServer.send(200, "text/html", "");
+
+  const size_t len = strlen_P(SETUP_HTML);
+  const size_t CHUNK = 256;
+  for (size_t i = 0; i < len; i += CHUNK) {
+    char buf[CHUNK + 1];
+    size_t n = (len - i < CHUNK) ? (len - i) : CHUNK;
+    memcpy_P(buf, SETUP_HTML + i, n);
+    buf[n] = '\0';
+    httpServer.sendContent(String(buf));
+  }
+  httpServer.sendContent("");  // Signal end of chunked response
 }
 
 void handleScan() {
