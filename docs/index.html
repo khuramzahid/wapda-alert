@@ -26,6 +26,8 @@
     </div>
     <nav>
       <a href="#features">Features</a>
+      <a href="#hardware">Hardware</a>
+      <a href="#screenshots">App</a>
       <a href="#architecture">Architecture</a>
       <a href="https://github.com/khuramzahid/wapda-alert" class="btn-primary" target="_blank">View on GitHub</a>
     </nav>
@@ -83,6 +85,66 @@
           <h3>Remote Management</h3>
           <p>Over-The-Air (OTA) style factory resets. Users can clear WiFi credentials and place the device back into
             setup mode remotely directly from the mobile interface.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="hardware" class="hardware-section">
+      <div class="section-title reveal">
+        <h2>The Hardware</h2>
+        <p>A custom-built monitoring unit powered by a NodeMCU ESP-12E and ZMPT101B voltage sensor.</p>
+      </div>
+      <div class="hardware-gallery reveal">
+        <div class="hardware-card glass-card">
+          <div class="hardware-img-wrapper">
+            <img src="circuit_closeup.jpeg" alt="Circuit closeup showing NodeMCU and ZMPT101B sensor" loading="lazy">
+          </div>
+          <div class="hardware-card-label">
+            <span class="hardware-tag">Close-Up</span>
+            <p>NodeMCU ESP-12E wired to a ZMPT101B AC voltage sensor module inside a compact enclosure.</p>
+          </div>
+        </div>
+        <div class="hardware-card glass-card">
+          <div class="hardware-img-wrapper">
+            <img src="circuit_deployed.jpeg" alt="Circuit deployed on wall near power outlet" loading="lazy">
+          </div>
+          <div class="hardware-card-label">
+            <span class="hardware-tag">Deployed</span>
+            <p>The prototype unit installed near the mains input, monitoring the grid voltage in real-time.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screenshots" class="screenshots-section">
+      <div class="section-title reveal">
+        <h2>The App Experience</h2>
+        <p>A premium dark-mode React Native interface for seamless device setup, discovery, and real-time control.</p>
+      </div>
+      <div class="screenshots-gallery reveal">
+        <div class="screenshot-item">
+          <div class="phone-frame">
+            <div class="phone-notch"></div>
+            <img src="setup-screen-wifi-ap.jpeg" alt="Device Setup screen showing WiFi AP scan" loading="lazy">
+          </div>
+          <h3>Device Setup</h3>
+          <p>Scan and connect to WAPDA Alert devices broadcasting in AP mode.</p>
+        </div>
+        <div class="screenshot-item">
+          <div class="phone-frame">
+            <div class="phone-notch"></div>
+            <img src="network-scan.jpeg" alt="Network scan and device discovery screen" loading="lazy">
+          </div>
+          <h3>Network Discovery</h3>
+          <p>Automatic mDNS-based scanning locates devices on your home network.</p>
+        </div>
+        <div class="screenshot-item">
+          <div class="phone-frame">
+            <div class="phone-notch"></div>
+            <img src="control-screen.jpeg" alt="Real-time power monitoring dashboard" loading="lazy">
+          </div>
+          <h3>Control Dashboard</h3>
+          <p>Live power status, device info, and remote factory reset at your fingertips.</p>
         </div>
       </div>
     </section>

@@ -225,6 +225,121 @@ nav a:hover {
   font-size: 0.95rem;
 }
 
+/* Hardware Section */
+.hardware-section {
+  padding: 5rem 5%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.hardware-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 2.5rem;
+}
+.hardware-card {
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hardware-card .hardware-img-wrapper {
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+}
+.hardware-card .hardware-img-wrapper img {
+  width: 100%;
+  display: block;
+  transition: transform 0.5s ease;
+}
+.hardware-card:hover .hardware-img-wrapper img {
+  transform: scale(1.05);
+}
+.hardware-card-label {
+  padding: 1.5rem 2rem;
+}
+.hardware-tag {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--primary);
+  background: rgba(59, 130, 246, 0.12);
+  padding: 0.3rem 0.8rem;
+  border-radius: 6px;
+  margin-bottom: 0.75rem;
+}
+.hardware-card-label p {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* Screenshots Section */
+.screenshots-section {
+  padding: 5rem 5%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.screenshots-gallery {
+  display: flex;
+  justify-content: center;
+  gap: 3rem;
+  flex-wrap: wrap;
+}
+.screenshot-item {
+  text-align: center;
+  max-width: 280px;
+}
+.screenshot-item h3 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.15rem;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+.screenshot-item p {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* Phone Frame */
+.phone-frame {
+  position: relative;
+  background: #1a1a2e;
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  border-radius: 32px;
+  padding: 12px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 60px rgba(59, 130, 246, 0.08);
+  overflow: hidden;
+  transition: transform 0.4s ease, box-shadow 0.4s ease;
+}
+.phone-frame:hover {
+  transform: translateY(-8px);
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.5),
+    0 0 80px rgba(139, 92, 246, 0.12);
+}
+.phone-notch {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  z-index: 2;
+}
+.phone-frame img {
+  width: 100%;
+  border-radius: 20px;
+  display: block;
+}
+
 /* Architecture */
 .architecture {
   padding: 5rem 5%;
@@ -282,6 +397,15 @@ nav a:hover {
   }
   nav {
     display: none;
+  }
+  .hardware-gallery {
+    grid-template-columns: 1fr;
+  }
+  .screenshots-gallery {
+    gap: 2rem;
+  }
+  .screenshot-item {
+    max-width: 240px;
   }
 }
 
